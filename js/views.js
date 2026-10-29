@@ -409,6 +409,24 @@ function initExerciseForm(id) {
     saveExerciseAnswers(id, answers);
     saveBtn.textContent = 'Guardar cambios';
     msg.classList.remove('visually-hidden');
+    var toggleBtn = document.querySelector('.exercise-toggle-btn[data-exercise-id="' + id + '"]');
+    if (toggleBtn) {
+      toggleBtn.textContent = 'Ver mis respuestas';
+    }
+  });
+}
+
+// Conecta el boton secundario que despliega u oculta el formulario de un
+// ejercicio. El formulario arranca siempre oculto: el texto del ejercicio
+// se lee primero, y apuntar la respuesta es opcional.
+function initExerciseToggle(id) {
+  var toggleBtn = document.querySelector('.exercise-toggle-btn[data-exercise-id="' + id + '"]');
+  var wrap = document.getElementById(id + '-wrap');
+  if (!toggleBtn || !wrap) return;
+  toggleBtn.addEventListener('click', function () {
+    var wasHidden = wrap.hidden;
+    wrap.hidden = !wasHidden;
+    toggleBtn.setAttribute('aria-expanded', wasHidden ? 'true' : 'false');
   });
 }
 
@@ -428,11 +446,24 @@ function renderChapter(id) {
   var html = '<a class="chapter-back-link" href="#/guia">‹ Mi guía</a>';
   html += '<p class="eyebrow">CAPÍTULO ' + Number(id) + ' DE ' + GUIDE_CONTENT.chapters.length + '</p>';
   html += '<h1 class="chapter-title">' + escapeHtml(chapterTitleText) + '</h1>';
+  var chapterChecklistIds = [];
   ch.sections.forEach(function (section) {
     if (section.heading) {
       html += '<h2>' + escapeHtml(section.heading) + '</h2>';
     }
-    html += renderTextBlock(section.body);
+    // La checklist diaria y la semanal del Capítulo 7 son el mismo contenido
+    // que GUIDE_CONTENT.toolkit.dailyChecklist / weeklyChecklist (misma
+    // frase literal). Se detectan por el título exacto para dibujarlas como
+    // casillas reales en vez de texto plano, sin duplicar los datos.
+    if (section.heading === GUIDE_CONTENT.toolkit.dailyChecklist.title) {
+      html += renderChecklistHtml('daily', GUIDE_CONTENT.toolkit.dailyChecklist.items);
+      chapterChecklistIds.push('daily');
+    } else if (section.heading === GUIDE_CONTENT.toolkit.weeklyChecklist.title) {
+      html += renderChecklistHtml('weekly', GUIDE_CONTENT.toolkit.weeklyChecklist.items);
+      chapterChecklistIds.push('weekly');
+    } else {
+      html += renderTextBlock(section.body);
+    }
   });
   var formedExerciseIds = [];
   if (ch.exercises.length) {
@@ -443,7 +474,14 @@ function renderChapter(id) {
       html += renderTextBlock(exercise.instructions);
       var exId = exerciseIdFromTitle(exercise.title);
       if (exId && EXERCISE_SCHEMA[exId]) {
+        var hasSaved = !!getExerciseAnswers(exId);
+        var toggleLabel = hasSaved ? 'Ver mis respuestas' : 'Apuntarlo aquí (opcional)';
+        var wrapId = exId + '-wrap';
+        html += '<button type="button" class="btn btn-outline exercise-toggle-btn" data-exercise-id="' + exId +
+          '" aria-expanded="false" aria-controls="' + wrapId + '">' + escapeHtml(toggleLabel) + '</button>';
+        html += '<div class="exercise-form-wrap" id="' + wrapId + '" hidden>';
         html += exerciseFormHtml(exId);
+        html += '</div>';
         formedExerciseIds.push(exId);
       }
       html += '</div>';
@@ -457,29 +495,73 @@ function renderChapter(id) {
     html += '<div class="chapter-next-wrap"><a class="btn" href="#/guia">Volver a la guía</a></div>';
   }
   container.innerHTML = html;
+  chapterChecklistIds.forEach(function (checklistId) {
+    initChecklist(checklistId);
+  });
   formedExerciseIds.forEach(function (exId) {
     initExerciseForm(exId);
+    initExerciseToggle(exId);
+  });
+}
+
+// Dibuja una checklist (diaria o semanal) como casillas reales, marcables
+// con un toque. Las marcas se guardan por el dia de hoy: cada dia la lista
+// arranca sin marcar, sin rachas ni porcentajes ni mensajes de logro. El
+// texto de cada item es el literal de la guia, quitando solo el simbolo ☐
+// que ahora sustituye la casilla real.
+function renderChecklistHtml(checklistId, items) {
+  var marks = getChecklistMarks(todayDateString(), checklistId);
+  var html = '<ul class="checklist" data-checklist-id="' + checklistId + '">';
+  items.forEach(function (item, i) {
+    var label = String(item).replace(/^☐\s*/, '');
+    var checked = marks[i] === true ? ' checked' : '';
+    html += '<li><label class="checklist-check"><input type="checkbox" data-checklist-index="' + i + '"' +
+      checked + '> ' + escapeHtml(label) + '</label></li>';
+  });
+  html += '</ul>';
+  return html;
+}
+
+// Conecta las casillas de una checklist ya insertada en el DOM. Puede haber
+// como mucho una instancia de cada checklist en pantalla a la vez (la del
+// capítulo 7 o la del Toolkit, nunca las dos juntas).
+function initChecklist(checklistId) {
+  var today = todayDateString();
+  var list = document.querySelector('.checklist[data-checklist-id="' + checklistId + '"]');
+  if (!list) return;
+  var inputs = list.querySelectorAll('input[type="checkbox"]');
+  inputs.forEach(function (input) {
+    input.addEventListener('change', function () {
+      var index = Number(input.getAttribute('data-checklist-index'));
+      setChecklistMark(today, checklistId, index, input.checked);
+    });
   });
 }
 
 function renderToolkit() {
-  var tools = [
-    GUIDE_CONTENT.toolkit.dailyChecklist,
-    GUIDE_CONTENT.toolkit.weeklyChecklist,
-    GUIDE_CONTENT.toolkit.fatigueLog,
-    GUIDE_CONTENT.toolkit.energyMap
-  ];
   var html = '<a class="chapter-back-link" href="#/guia">‹ Mi guía</a>';
   html += '<h1>Tu kit de herramientas</h1><div class="toolkit-grid">';
-  tools.forEach(function (tool) {
+
+  html += '<div class="card"><h2>' + escapeHtml(GUIDE_CONTENT.toolkit.dailyChecklist.title) + '</h2>';
+  html += renderChecklistHtml('daily', GUIDE_CONTENT.toolkit.dailyChecklist.items);
+  html += '</div>';
+
+  html += '<div class="card"><h2>' + escapeHtml(GUIDE_CONTENT.toolkit.weeklyChecklist.title) + '</h2>';
+  html += renderChecklistHtml('weekly', GUIDE_CONTENT.toolkit.weeklyChecklist.items);
+  html += '</div>';
+
+  [GUIDE_CONTENT.toolkit.fatigueLog, GUIDE_CONTENT.toolkit.energyMap].forEach(function (tool) {
     html += '<div class="card"><h2>' + escapeHtml(tool.title) + '</h2><ul>';
     tool.items.forEach(function (item) {
       html += '<li>' + escapeHtml(item) + '</li>';
     });
     html += '</ul></div>';
   });
+
   html += '</div><p><a href="#/guia">Volver a la guía</a></p>';
   document.getElementById('app-content').innerHTML = html;
+  initChecklist('daily');
+  initChecklist('weekly');
 }
 
 function renderActionPlan() {
@@ -722,7 +804,7 @@ function renderMyData() {
       confirmBtn.className = 'btn btn-danger';
       confirmBtn.textContent = 'Sí, sustituir mis datos';
       confirmBtn.addEventListener('click', function () {
-        replaceAllData(pendingImportData.entries, pendingImportData.exercises);
+        replaceAllData(pendingImportData.entries, pendingImportData.exercises, pendingImportData.checklists);
         renderMyData();
         var successEl = document.getElementById('import-success');
         if (successEl) {
@@ -803,6 +885,7 @@ function renderPrivacy() {
   html += '<h2>Qué se guarda</h2>';
   html += '<p>Tus registros de energía y tus notas se guardan únicamente en este móvil, dentro del propio navegador (lo que se llama "almacenamiento local"). Nunca se copian a ningún servidor nuestro ni de terceros, ni se envían a internet en ningún momento.</p>';
   html += '<p>Lo mismo ocurre con las respuestas que escribas en los ejercicios de la guía: se guardan solo en este móvil, junto a tus registros de energía, y se incluyen igual en la exportación, la importación y el borrado de datos.</p>';
+  html += '<p>Las marcas de las checklists (por ejemplo, la checklist diaria del Capítulo 7 o del Toolkit) también se guardan solo en este móvil, con el mismo tratamiento que el resto de tus datos.</p>';
 
   html += '<h2>Qué no recogemos</h2>';
   html += '<p>No te pedimos nombre, correo ni ubicación para usar la app. No usamos herramientas de analítica ni medimos cómo usas la app. No hay ningún servicio externo conectado: la app funciona sin conexión a internet y no manda nada a ningún sitio.</p>';

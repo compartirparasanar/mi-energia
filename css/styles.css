@@ -596,6 +596,16 @@ footer a {
   filter: brightness(0.93);
 }
 
+.btn-outline {
+  background-color: transparent;
+  color: var(--color-terracotta-dark);
+  border: 2px solid var(--color-terracotta-dark);
+}
+
+.btn-outline:hover, .btn-outline:focus-visible {
+  background-color: var(--color-selection-bg);
+}
+
 .confirm-buttons {
   display: flex;
   gap: var(--space-3);
@@ -698,6 +708,37 @@ footer a {
   color: var(--color-dark-text);
   font-weight: 600;
   margin: 0;
+}
+
+/* ---------- Checklists marcables (capitulo 7 y toolkit) ---------- */
+
+.checklist {
+  list-style: none;
+  margin: var(--space-4) 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.checklist-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 48px;
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  font-size: 1rem;
+  color: var(--color-dark-text);
+}
+
+.checklist-check input[type="checkbox"] {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
 }
 
 .visually-hidden {

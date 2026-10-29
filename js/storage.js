@@ -6,6 +6,8 @@
 var ENERGY_LOG_KEY = 'mi-energia-log';
 var EXERCISES_KEY = 'mi-energia-ejercicios';
 var EXERCISE_IDS = ['ex-1-1', 'ex-2-1', 'ex-3-1', 'ex-3-2', 'ex-5-1', 'ex-6-1'];
+var CHECKLISTS_KEY = 'mi-energia-checklists';
+var CHECKLIST_IDS = ['daily', 'weekly'];
 
 function todayDateString() {
   var now = new Date();
@@ -59,6 +61,7 @@ function getTodayEntry() {
 function deleteAllData() {
   localStorage.removeItem(ENERGY_LOG_KEY);
   localStorage.removeItem(EXERCISES_KEY);
+  localStorage.removeItem(CHECKLISTS_KEY);
 }
 
 // Comprueba recursivamente que un valor de respuesta de ejercicio es solo
@@ -112,13 +115,77 @@ function saveExerciseAnswers(exerciseId, answers) {
   localStorage.setItem(EXERCISES_KEY, JSON.stringify(all));
 }
 
+// Valida las marcas de un dia concreto: un objeto cuyas claves son ids de
+// checklist conocidos y cuyos valores son arrays de booleanos (una posicion
+// por item de la checklist).
+function isValidChecklistDay(day) {
+  if (day === null || typeof day !== 'object' || Array.isArray(day)) {
+    return false;
+  }
+  return Object.keys(day).every(function (id) {
+    return CHECKLIST_IDS.indexOf(id) !== -1 && Array.isArray(day[id]) &&
+      day[id].every(function (v) { return typeof v === 'boolean'; });
+  });
+}
+
+// Valida el bloque completo de marcas de checklists (una copia de seguridad
+// antigua sin este bloque es valida: un objeto vacio pasa).
+function isValidChecklistsBlock(obj) {
+  if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
+    return false;
+  }
+  return Object.keys(obj).every(function (date) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) && isValidChecklistDay(obj[date]);
+  });
+}
+
+function getAllChecklistMarks() {
+  var raw = localStorage.getItem(CHECKLISTS_KEY);
+  var data = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    data = {};
+  }
+  return isValidChecklistsBlock(data) ? data : {};
+}
+
+// Devuelve las marcas de una checklist para un dia concreto (array de
+// booleanos). Si no hay marcas guardadas para ese dia, la lista arranca
+// vacia (equivale a "todo sin marcar": no hay rachas ni memoria entre dias).
+function getChecklistMarks(date, checklistId) {
+  var all = getAllChecklistMarks();
+  var day = all[date];
+  return (day && Array.isArray(day[checklistId])) ? day[checklistId] : [];
+}
+
+function setChecklistMark(date, checklistId, index, checked) {
+  if (CHECKLIST_IDS.indexOf(checklistId) === -1 || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return;
+  }
+  var all = getAllChecklistMarks();
+  var day = (all[date] && typeof all[date] === 'object') ? all[date] : {};
+  var marks = Array.isArray(day[checklistId]) ? day[checklistId].slice() : [];
+  // Rellena huecos con false antes del indice marcado: un array con huecos
+  // (undefined) se convertiria en null al guardar como JSON, y el array
+  // dejaria de ser valido (solo se aceptan booleanos).
+  while (marks.length < index) {
+    marks.push(false);
+  }
+  marks[index] = !!checked;
+  day[checklistId] = marks;
+  all[date] = day;
+  localStorage.setItem(CHECKLISTS_KEY, JSON.stringify(all));
+}
+
 // Serializa todos los registros y respuestas de ejercicios en un JSON
 // descargable como copia de seguridad. No incluye nada más que no esté ya
 // guardado en el dispositivo.
 function exportDataJSON() {
   var entries = getEnergyLog();
   var exercises = getAllExerciseAnswers();
-  return JSON.stringify({ app: 'mi-energia', version: 2, entries: entries, exercises: exercises }, null, 2);
+  var checklists = getAllChecklistMarks();
+  return JSON.stringify({ app: 'mi-energia', version: 3, entries: entries, exercises: exercises, checklists: checklists }, null, 2);
 }
 
 function isValidLogEntry(entry) {
@@ -129,8 +196,9 @@ function isValidLogEntry(entry) {
 
 // Valida un texto como copia de seguridad de Mi Energía. No escribe nada
 // en localStorage: solo parsea y comprueba el formato. Devuelve
-// {entries, exercises} ya saneados, o null si no es valida. Las copias
-// antiguas sin bloque de ejercicios son válidas (se usa un objeto vacío).
+// {entries, exercises, checklists} ya saneados, o null si no es valida. Las
+// copias antiguas sin bloque de ejercicios o de checklists son válidas (se
+// usa un objeto vacío para el bloque que falte).
 function parseBackupJSON(jsonText) {
   var parsed;
   try {
@@ -151,12 +219,15 @@ function parseBackupJSON(jsonText) {
   });
   var rawExercises = (!Array.isArray(parsed) && parsed && parsed.exercises) || {};
   var exercises = isValidExercisesBlock(rawExercises) ? rawExercises : {};
-  return { entries: sanitizedEntries, exercises: exercises };
+  var rawChecklists = (!Array.isArray(parsed) && parsed && parsed.checklists) || {};
+  var checklists = isValidChecklistsBlock(rawChecklists) ? rawChecklists : {};
+  return { entries: sanitizedEntries, exercises: exercises, checklists: checklists };
 }
 
-// Sustituye todos los registros y respuestas de ejercicios actuales por
-// los indicados. Se usa tras confirmar una importacion.
-function replaceAllData(entries, exercises) {
+// Sustituye todos los registros, respuestas de ejercicios y marcas de
+// checklist actuales por los indicados. Se usa tras confirmar una importacion.
+function replaceAllData(entries, exercises, checklists) {
   localStorage.setItem(ENERGY_LOG_KEY, JSON.stringify(entries));
   localStorage.setItem(EXERCISES_KEY, JSON.stringify(exercises || {}));
+  localStorage.setItem(CHECKLISTS_KEY, JSON.stringify(checklists || {}));
 }
