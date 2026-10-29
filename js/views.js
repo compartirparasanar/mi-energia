@@ -113,17 +113,8 @@ function renderHome() {
   var today = getTodayEntry();
   var entries = getEnergyLog();
 
-  var totalExercises = GUIDE_CONTENT.chapters.reduce(function (sum, ch) {
-    return sum + ch.exercises.length;
-  }, 0);
-
   var html = '<div class="home-seal"><img src="assets/logo_b-transparente.svg" alt="Sello compartir · para · sanar" width="160" height="160"></div>';
   html += '<div class="home-greeting"><p class="eyebrow">@compartir.para.sanar</p><h1>Hola</h1></div>';
-
-  html += '<div class="callout">';
-  html += '<p>Instala la app antes de empezar a registrar, para no perder tus datos.</p>';
-  html += '<p><a href="#/instalar">Cómo instalarla</a></p>';
-  html += '</div>';
 
   html += '<div class="bento-grid">';
 
@@ -154,26 +145,13 @@ function renderHome() {
   }
   html += '</a>';
 
-  html += '<a class="bento-card" href="#/guia">';
+  html += '<a class="bento-card bento-card-wide" href="#/guia">';
   html += '<h3>Seguir con la guía</h3>';
   html += '<p>Continúa donde lo dejaste.</p>';
   html += '</a>';
 
-  html += '<a class="bento-card" href="#/guia/plan-21">';
-  html += '<h3>Plan de 21 días</h3>';
-  html += '<p>Un paso pequeño cada día.</p>';
-  html += '</a>';
-
-  html += '<a class="bento-card bento-card-wide bento-card-beige" href="#/guia">';
-  html += '<div class="bento-card-header-row"><h3>Mis ejercicios</h3><span class="bento-card-chevron" aria-hidden="true">›</span></div>';
-  html += '<p>' + totalExercises + ' ejercicios de la guía, listos para completar a tu ritmo.</p>';
-  html += '</a>';
-
   html += '</div>';
 
-  html += '<ul class="action-list">';
-  html += '<li><a href="#/mis-datos">Exportar o importar tu copia de seguridad</a></li>';
-  html += '</ul>';
   html += '<p class="home-footer">Recibes esta app por tu suscripción a @compartir.para.sanar. <a href="#/privacidad">Más sobre privacidad</a></p>';
 
   document.getElementById('app-content').innerHTML = html;
@@ -207,17 +185,19 @@ function renderHome() {
 
 function renderGuideIndex() {
   var html = '<h1>Guía</h1>';
-  html += '<h2>' + escapeHtml(GUIDE_CONTENT.intro.title) + '</h2>';
-  GUIDE_CONTENT.intro.sections.forEach(function (section) {
-    html += renderTextBlock(section.body);
-  });
   html += '<ul class="guide-index">';
   GUIDE_CONTENT.chapters.forEach(function (ch) {
     html += '<li><a href="#/guia/' + ch.id + '">' + escapeHtml(ch.title) + '</a></li>';
   });
-  html += '<li><a href="#/guia/toolkit">Tu kit de herramientas</a></li>';
   html += '<li><a href="#/guia/plan-21">Plan de acción de 21 días</a></li>';
   html += '</ul>';
+  html += '<details class="inline-details">';
+  html += '<summary>Cómo usar esta guía</summary>';
+  html += '<h2>' + escapeHtml(GUIDE_CONTENT.intro.title) + '</h2>';
+  GUIDE_CONTENT.intro.sections.forEach(function (section) {
+    html += renderTextBlock(section.body);
+  });
+  html += '</details>';
   document.getElementById('app-content').innerHTML = html;
 }
 
@@ -418,15 +398,22 @@ function initExerciseForm(id) {
 
 // Conecta el boton secundario que despliega u oculta el formulario de un
 // ejercicio. El formulario arranca siempre oculto: el texto del ejercicio
-// se lee primero, y apuntar la respuesta es opcional.
+// se lee primero, y apuntar la respuesta es opcional. Al desplegar el
+// formulario se oculta el texto del ejercicio (ejemplos y "tu turno"), para
+// no mostrar dos veces lo mismo: el formulario ya es la version rellenable
+// de esos mismos espacios en blanco. Al volver a plegarlo, el texto reaparece.
 function initExerciseToggle(id) {
   var toggleBtn = document.querySelector('.exercise-toggle-btn[data-exercise-id="' + id + '"]');
   var wrap = document.getElementById(id + '-wrap');
+  var instructions = document.getElementById(id + '-instructions');
   if (!toggleBtn || !wrap) return;
   toggleBtn.addEventListener('click', function () {
     var wasHidden = wrap.hidden;
     wrap.hidden = !wasHidden;
     toggleBtn.setAttribute('aria-expanded', wasHidden ? 'true' : 'false');
+    if (instructions) {
+      instructions.hidden = wasHidden;
+    }
   });
 }
 
@@ -471,9 +458,9 @@ function renderChapter(id) {
     ch.exercises.forEach(function (exercise) {
       html += '<div class="exercise-card">';
       html += '<h3>' + escapeHtml(exercise.title) + '</h3>';
-      html += renderTextBlock(exercise.instructions);
       var exId = exerciseIdFromTitle(exercise.title);
       if (exId && EXERCISE_SCHEMA[exId]) {
+        html += '<div id="' + exId + '-instructions">' + renderTextBlock(exercise.instructions) + '</div>';
         var hasSaved = !!getExerciseAnswers(exId);
         var toggleLabel = hasSaved ? 'Ver mis respuestas' : 'Apuntarlo aquí (opcional)';
         var wrapId = exId + '-wrap';
@@ -483,9 +470,14 @@ function renderChapter(id) {
         html += exerciseFormHtml(exId);
         html += '</div>';
         formedExerciseIds.push(exId);
+      } else {
+        html += renderTextBlock(exercise.instructions);
       }
       html += '</div>';
     });
+  }
+  if (Number(id) === 8) {
+    html += '<div class="chapter-plan-link-wrap"><a class="btn btn-outline" href="#/guia/plan-21">Ver el plan día a día</a></div>';
   }
   var nextCh = GUIDE_CONTENT.chapters[Number(id)];
   html += '<p class="chapter-end-msg">Has llegado al final de este capítulo. Vuelve cuando quieras, a tu ritmo.</p>';
@@ -565,17 +557,20 @@ function renderToolkit() {
 }
 
 function renderActionPlan() {
-  var html = '<a class="chapter-back-link" href="#/guia">‹ Mi guía</a>';
+  var html = '<a class="chapter-back-link" href="#/guia/8">‹ Volver al capítulo 8</a>';
   html += '<h1>Plan de acción de 21 días</h1>';
   GUIDE_CONTENT.actionPlan.weeks.forEach(function (week) {
     html += '<h2>' + escapeHtml(week.name) + '</h2>';
     html += '<div class="callout"><p class="eyebrow">OBJETIVO DE LA SEMANA</p><p>' + escapeHtml(week.objective) + '</p></div>';
+    html += '<details class="inline-details">';
+    html += '<summary>Ver día a día</summary>';
     html += '<div class="plan-week">';
     week.days.forEach(function (day) {
       html += '<h3>' + escapeHtml(day.title) + '</h3>';
       html += renderTextBlock(day.description);
     });
     html += '</div>';
+    html += '</details>';
   });
   html += '<p><a href="#/guia">Volver a la guía</a></p>';
   document.getElementById('app-content').innerHTML = html;
@@ -850,10 +845,16 @@ function renderMyData() {
 }
 
 function renderInstall() {
+  // Abre por defecto solo las instrucciones del sistema del dispositivo
+  // actual (segun userAgent); el otro sistema queda plegado. Si no se
+  // detecta iOS, se abre Android (por defecto, incluye escritorio).
+  var isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
   var html = '<h1>Instalar la app</h1>';
   html += '<div class="callout"><p>Instala la app antes de empezar a registrar, para no perder tus datos.</p></div>';
 
-  html += '<h2>En iPhone (con Safari)</h2>';
+  html += '<details class="platform-details"' + (isIOS ? ' open' : '') + '>';
+  html += '<summary>En iPhone (con Safari)</summary>';
   html += '<ol>';
   html += '<li>Abre esta página en Safari (no en Chrome ni otro navegador).</li>';
   html += '<li>Toca el icono Compartir (el cuadrado con una flecha hacia arriba), en la barra de abajo.</li>';
@@ -861,14 +862,17 @@ function renderInstall() {
   html += '<li>Toca "Añadir" arriba a la derecha.</li>';
   html += '<li>A partir de ahora, abre siempre la app desde el icono nuevo de tu pantalla de inicio, no desde Safari.</li>';
   html += '</ol>';
+  html += '</details>';
 
-  html += '<h2>En Android (con Chrome)</h2>';
+  html += '<details class="platform-details"' + (isIOS ? '' : ' open') + '>';
+  html += '<summary>En Android (con Chrome)</summary>';
   html += '<ol>';
   html += '<li>Abre esta página en Chrome.</li>';
   html += '<li>Toca el menú (los tres puntos, arriba a la derecha).</li>';
   html += '<li>Toca "Instalar app" o "Añadir a pantalla de inicio".</li>';
   html += '<li>Confirma tocando "Instalar".</li>';
   html += '</ol>';
+  html += '</details>';
 
   html += '<h2>¿Por qué instalar?</h2>';
   html += '<p>Safari y otros navegadores pueden borrar los datos de una pestaña normal cuando pasa tiempo sin usarla o cuando el teléfono necesita espacio. Si instalas la app como un icono aparte, tus registros quedan mucho más protegidos frente a ese borrado automático.</p>';

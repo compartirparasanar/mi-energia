@@ -1021,3 +1021,61 @@ a.bento-card:hover, a.bento-card:focus-visible {
   width: 100%;
   margin-bottom: 0;
 }
+
+/* ---------- Contenido plegable: guia, plan 21 dias, instalar (step 13) ---------- */
+
+.inline-details {
+  margin: var(--space-4) 0;
+}
+
+.inline-details summary {
+  cursor: pointer;
+  list-style: none;
+  color: var(--color-brown);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: rgba(107, 79, 58, 0.4);
+}
+
+.inline-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.inline-details summary:hover, .inline-details summary:focus-visible {
+  text-decoration-color: var(--color-brown);
+}
+
+.inline-details[open] summary {
+  margin-bottom: var(--space-3);
+}
+
+.platform-details {
+  margin: var(--space-5) 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-4) var(--space-5);
+}
+
+.platform-details summary {
+  cursor: pointer;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 1.1875rem;
+  color: var(--color-brown);
+}
+
+.platform-details[open] summary {
+  margin-bottom: var(--space-3);
+}
+
+.platform-details ol {
+  margin-bottom: 0;
+}
+
+.chapter-plan-link-wrap {
+  margin: var(--space-5) 0;
+}
+
+.chapter-plan-link-wrap .btn {
+  margin-bottom: 0;
+}
