@@ -154,6 +154,10 @@ function renderHome() {
 
   html += '<p class="home-footer">Recibes esta app por tu suscripción a @compartir.para.sanar. <a href="#/privacidad">Más sobre privacidad</a></p>';
 
+  var isInstalled = window.matchMedia('(display-mode: standalone)').matches || !!window.navigator.standalone;
+  html += '<p class="home-footer"><a href="#/mis-datos">Mis datos y privacidad</a>' +
+    (isInstalled ? '' : ' · <a href="#/instalar">Cómo instalar</a>') + '</p>';
+
   document.getElementById('app-content').innerHTML = html;
 
   if (entries.length >= 2) {
@@ -189,7 +193,7 @@ function renderGuideIndex() {
   GUIDE_CONTENT.chapters.forEach(function (ch) {
     html += '<li><a href="#/guia/' + ch.id + '">' + escapeHtml(ch.title) + '</a></li>';
   });
-  html += '<li><a href="#/guia/plan-21">Plan de acción de 21 días</a></li>';
+  html += '<li><a href="#/guia/plan-21">Plan día a día (21 días)</a></li>';
   html += '</ul>';
   html += '<details class="inline-details">';
   html += '<summary>Cómo usar esta guía</summary>';
@@ -645,6 +649,8 @@ function renderLog() {
     });
     html += '</ul>';
   }
+
+  html += '<p class="home-footer"><a href="#/mis-datos">Mis datos y privacidad</a></p>';
 
   document.getElementById('app-content').innerHTML = html;
 

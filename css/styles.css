@@ -144,9 +144,9 @@ a:hover, a:focus-visible {
 }
 
 .skip-link {
-  position: absolute;
-  top: -48px;
-  left: var(--space-4);
+  position: fixed;
+  top: var(--space-3);
+  left: -9999px;
   z-index: 10;
   background-color: var(--color-brown);
   color: var(--color-white);
@@ -155,11 +155,11 @@ a:hover, a:focus-visible {
   font-family: var(--font-ui);
   font-weight: 700;
   text-decoration: none;
-  transition: top 200ms ease-in-out;
+  transition: left 200ms ease-in-out;
 }
 
 .skip-link:focus {
-  top: var(--space-3);
+  left: var(--space-4);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -191,7 +191,7 @@ header.top-bar {
 }
 
 .top-bar-brand:hover, .top-bar-brand:focus-visible {
-  text-decoration: underline;
+  text-decoration: none;
 }
 
 main#app-content {
@@ -405,6 +405,7 @@ footer a {
 }
 
 .level-btn {
+  position: relative;
   min-height: 56px;
   min-width: 44px;
   display: flex;
@@ -441,7 +442,12 @@ footer a {
 }
 
 .level-btn.selected::after {
-  content: " \2713";
+  content: "\2713";
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-2);
+  font-size: 0.875rem;
+  line-height: 1;
 }
 
 #log-note {
@@ -511,7 +517,7 @@ footer a {
 }
 
 .registro-card .level-btn {
-  justify-content: space-between;
+  justify-content: center;
   padding: 0 var(--space-4);
 }
 

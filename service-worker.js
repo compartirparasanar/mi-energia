@@ -17,7 +17,7 @@
 // Resultado: quien ya tiene la app instalada recibe la actualizacion la
 // siguiente vez que la abre con conexion a internet (normalmente en la
 // recarga siguiente, a veces una recarga mas tarde segun el navegador).
-var CACHE_VERSION = 'v8';
+var CACHE_VERSION = 'v9';
 var CACHE_NAME = 'mi-energia-' + CACHE_VERSION;
 
 var PRECACHE_URLS = [
