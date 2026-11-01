@@ -594,14 +594,59 @@ function renderToolkit() {
   initChecklist('weekly');
 }
 
-// Contenido provisional de la pestaña "Pequeños pasos": reutiliza las
-// checklists diaria y semanal ya existentes (mismo componente que el
-// Capítulo 7 y el Toolkit). En una fase posterior aquí vivirá el "paso de
-// un toque" diario; de momento es solo un acceso directo a estas dos
-// checklists sin tener que entrar en la guía.
-function renderSmallSteps() {
+// Indice deterministico (0-5) para elegir, segun la fecha de calendario,
+// cual de los 6 "ladrones silenciosos" del Ejercicio 3.2 se muestra como
+// paso de un toque. Mismo dia natural => mismo indice siempre (nunca al
+// azar); avanza un item cada dia y da la vuelta cada 6 dias.
+function pasoIndexForDate(dateStr) {
+  var parts = String(dateStr).split('-');
+  var items = EXERCISE_SCHEMA['ex-3-2'].checks;
+  if (parts.length !== 3) return 0;
+  var days = Math.floor(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])) / 86400000);
+  var n = items.length;
+  return ((days % n) + n) % n;
+}
+
+// HTML de la tarjeta de "paso de un toque" (Fase 2). offset permite ver
+// "Otro paso" sin cambiar de dia: se suma al indice del dia y se le aplica
+// el modulo, así que nunca se sale del rango de los 6 items. Reutiliza
+// EXERCISE_SCHEMA['ex-3-2'].checks como unica fuente de los 6 "ladrones
+// silenciosos" (ya extraidos del texto literal de content.js), sin
+// duplicar esa lista aqui.
+function renderPasoCardHtml(offset) {
+  var items = EXERCISE_SCHEMA['ex-3-2'].checks;
+  var today = todayDateString();
+  var idx = (pasoIndexForDate(today) + (offset || 0)) % items.length;
+  var item = items[idx];
+  var todayPasos = getPasosForDate(today);
+  var answered = Object.prototype.hasOwnProperty.call(todayPasos, item.key);
+
+  var html = '<div class="card paso-card">';
+  html += '<p class="eyebrow">Pequeño paso de hoy</p>';
+  if (answered) {
+    html += '<p class="confirmation">Gracias por prestarle atención a esto.</p>';
+    html += '<p class="eyebrow">Listo por hoy.</p>';
+  } else {
+    var question = '¿Hoy te ha pasado: ' + item.label.charAt(0).toLowerCase() + item.label.slice(1) + '?';
+    html += '<p class="paso-question">' + escapeHtml(question) + '</p>';
+    html += '<div class="confirm-buttons">';
+    html += '<button type="button" class="btn" id="paso-si-btn" data-paso-key="' + item.key + '">Sí</button>';
+    html += '<button type="button" class="btn btn-secondary" id="paso-no-btn" data-paso-key="' + item.key + '">No</button>';
+    html += '</div>';
+  }
+  html += '<button type="button" class="btn btn-outline paso-otro-btn" id="paso-otro-btn">Otro paso</button>';
+  html += '</div>';
+  return html;
+}
+
+// Pestaña "Pequeños pasos": arriba, el paso de un toque (Ejercicio 3.2 en
+// rotación diaria); debajo, las checklists diaria y semanal ya existentes
+// (mismo componente que el Capítulo 7 y el Toolkit, reutilizadas sin
+// duplicar datos ni logica).
+function renderSmallSteps(offset) {
+  var currentOffset = offset || 0;
   var html = '<h1>Pequeños pasos</h1>';
-  html += '<p class="eyebrow">Esto es solo el principio: pronto habrá formas rápidas de hacer un pequeño paso.</p>';
+  html += renderPasoCardHtml(currentOffset);
   html += '<div class="toolkit-grid">';
 
   html += '<div class="card"><h2>' + escapeHtml(GUIDE_CONTENT.toolkit.dailyChecklist.title) + '</h2>';
@@ -616,6 +661,28 @@ function renderSmallSteps() {
   document.getElementById('app-content').innerHTML = html;
   initChecklist('daily');
   initChecklist('weekly');
+
+  var today = todayDateString();
+  var siBtn = document.getElementById('paso-si-btn');
+  var noBtn = document.getElementById('paso-no-btn');
+  if (siBtn) {
+    siBtn.addEventListener('click', function () {
+      setPaso(today, siBtn.getAttribute('data-paso-key'), true);
+      renderSmallSteps(currentOffset);
+    });
+  }
+  if (noBtn) {
+    noBtn.addEventListener('click', function () {
+      setPaso(today, noBtn.getAttribute('data-paso-key'), false);
+      renderSmallSteps(currentOffset);
+    });
+  }
+  var otroBtn = document.getElementById('paso-otro-btn');
+  if (otroBtn) {
+    otroBtn.addEventListener('click', function () {
+      renderSmallSteps(currentOffset + 1);
+    });
+  }
 }
 
 function renderActionPlan() {
@@ -951,7 +1018,7 @@ function renderMyData() {
       confirmBtn.className = 'btn btn-danger';
       confirmBtn.textContent = 'Sí, sustituir mis datos';
       confirmBtn.addEventListener('click', function () {
-        replaceAllData(pendingImportData.entries, pendingImportData.exercises, pendingImportData.checklists);
+        replaceAllData(pendingImportData.entries, pendingImportData.exercises, pendingImportData.checklists, pendingImportData.pasos);
         renderMyData();
         var successEl = document.getElementById('import-success');
         if (successEl) {
@@ -1042,6 +1109,7 @@ function renderPrivacy() {
   html += '<p>Tus registros de energía y tus notas se guardan únicamente en este móvil, dentro del propio navegador (lo que se llama "almacenamiento local"). Nunca se copian a ningún servidor nuestro ni de terceros, ni se envían a internet en ningún momento.</p>';
   html += '<p>Lo mismo ocurre con las respuestas que escribas en los ejercicios de la guía: se guardan solo en este móvil, junto a tus registros de energía, y se incluyen igual en la exportación, la importación y el borrado de datos.</p>';
   html += '<p>Las marcas de las checklists (por ejemplo, la checklist diaria del Capítulo 7 o del Toolkit) también se guardan solo en este móvil, con el mismo tratamiento que el resto de tus datos.</p>';
+  html += '<p>Lo mismo ocurre con tus respuestas en "Pequeños pasos" (si hoy te ha pasado algo o no): se guardan solo en este móvil, y se incluyen igual en la exportación, la importación y el borrado de datos.</p>';
 
   html += '<h2>Qué no recogemos</h2>';
   html += '<p>No te pedimos nombre, correo ni ubicación para usar la app. No usamos herramientas de analítica ni medimos cómo usas la app. No hay ningún servicio externo conectado: la app funciona sin conexión a internet y no manda nada a ningún sitio.</p>';

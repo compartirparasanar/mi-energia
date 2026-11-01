@@ -8,6 +8,11 @@ var EXERCISES_KEY = 'mi-energia-ejercicios';
 var EXERCISE_IDS = ['ex-1-1', 'ex-2-1', 'ex-3-1', 'ex-3-2', 'ex-5-1', 'ex-6-1'];
 var CHECKLISTS_KEY = 'mi-energia-checklists';
 var CHECKLIST_IDS = ['daily', 'weekly'];
+// "Pequeños pasos" (paso de un toque, Fase 2): mismas 6 claves que
+// EXERCISE_SCHEMA['ex-3-2'].checks en views.js (Ejercicio 3.2, "ladrones
+// silenciosos"), para poder cruzar datos en el futuro sin duplicar ids.
+var PASOS_KEY = 'mi-energia-pasos';
+var PASOS_IDS = ['decisiones', 'notificaciones', 'conversaciones', 'cambios', 'ambientes', 'deberia'];
 
 function todayDateString() {
   var now = new Date();
@@ -62,6 +67,7 @@ function deleteAllData() {
   localStorage.removeItem(ENERGY_LOG_KEY);
   localStorage.removeItem(EXERCISES_KEY);
   localStorage.removeItem(CHECKLISTS_KEY);
+  localStorage.removeItem(PASOS_KEY);
 }
 
 // Comprueba recursivamente que un valor de respuesta de ejercicio es solo
@@ -178,14 +184,69 @@ function setChecklistMark(date, checklistId, index, checked) {
   localStorage.setItem(CHECKLISTS_KEY, JSON.stringify(all));
 }
 
-// Serializa todos los registros y respuestas de ejercicios en un JSON
-// descargable como copia de seguridad. No incluye nada más que no esté ya
-// guardado en el dispositivo.
+// Valida las respuestas de "pequeños pasos" de un dia concreto: un objeto
+// cuyas claves son ids conocidos (PASOS_IDS) y cuyos valores son booleanos
+// (true = "si me ha pasado hoy", false = "no"). Puede haber mas de una
+// clave por dia si se contestó más de un "paso" ese día (botón "Otro paso").
+function isValidPasosDay(day) {
+  if (day === null || typeof day !== 'object' || Array.isArray(day)) {
+    return false;
+  }
+  return Object.keys(day).every(function (key) {
+    return PASOS_IDS.indexOf(key) !== -1 && typeof day[key] === 'boolean';
+  });
+}
+
+// Valida el bloque completo de "pequeños pasos" (una copia de seguridad
+// antigua sin este bloque es valida: un objeto vacio pasa).
+function isValidPasosBlock(obj) {
+  if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
+    return false;
+  }
+  return Object.keys(obj).every(function (date) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) && isValidPasosDay(obj[date]);
+  });
+}
+
+function getAllPasos() {
+  var raw = localStorage.getItem(PASOS_KEY);
+  var data = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    data = {};
+  }
+  return isValidPasosBlock(data) ? data : {};
+}
+
+// Devuelve las respuestas de "pequeños pasos" de un dia concreto (objeto
+// clave->booleano). Si no hay nada guardado ese dia, devuelve un objeto
+// vacio (no hay rachas ni memoria entre dias).
+function getPasosForDate(date) {
+  var all = getAllPasos();
+  return (all[date] && typeof all[date] === 'object') ? all[date] : {};
+}
+
+function setPaso(date, key, value) {
+  if (PASOS_IDS.indexOf(key) === -1 || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return;
+  }
+  var all = getAllPasos();
+  var day = (all[date] && typeof all[date] === 'object') ? all[date] : {};
+  day[key] = !!value;
+  all[date] = day;
+  localStorage.setItem(PASOS_KEY, JSON.stringify(all));
+}
+
+// Serializa todos los registros, respuestas de ejercicios, marcas de
+// checklist y pequeños pasos en un JSON descargable como copia de
+// seguridad. No incluye nada más que no esté ya guardado en el dispositivo.
 function exportDataJSON() {
   var entries = getEnergyLog();
   var exercises = getAllExerciseAnswers();
   var checklists = getAllChecklistMarks();
-  return JSON.stringify({ app: 'mi-energia', version: 3, entries: entries, exercises: exercises, checklists: checklists }, null, 2);
+  var pasos = getAllPasos();
+  return JSON.stringify({ app: 'mi-energia', version: 4, entries: entries, exercises: exercises, checklists: checklists, pasos: pasos }, null, 2);
 }
 
 function isValidLogEntry(entry) {
@@ -196,9 +257,9 @@ function isValidLogEntry(entry) {
 
 // Valida un texto como copia de seguridad de Mi Energía. No escribe nada
 // en localStorage: solo parsea y comprueba el formato. Devuelve
-// {entries, exercises, checklists} ya saneados, o null si no es valida. Las
-// copias antiguas sin bloque de ejercicios o de checklists son válidas (se
-// usa un objeto vacío para el bloque que falte).
+// {entries, exercises, checklists, pasos} ya saneados, o null si no es
+// valida. Las copias antiguas sin bloque de ejercicios, checklists o pasos
+// son válidas (se usa un objeto vacío para el bloque que falte).
 function parseBackupJSON(jsonText) {
   var parsed;
   try {
@@ -221,13 +282,17 @@ function parseBackupJSON(jsonText) {
   var exercises = isValidExercisesBlock(rawExercises) ? rawExercises : {};
   var rawChecklists = (!Array.isArray(parsed) && parsed && parsed.checklists) || {};
   var checklists = isValidChecklistsBlock(rawChecklists) ? rawChecklists : {};
-  return { entries: sanitizedEntries, exercises: exercises, checklists: checklists };
+  var rawPasos = (!Array.isArray(parsed) && parsed && parsed.pasos) || {};
+  var pasos = isValidPasosBlock(rawPasos) ? rawPasos : {};
+  return { entries: sanitizedEntries, exercises: exercises, checklists: checklists, pasos: pasos };
 }
 
-// Sustituye todos los registros, respuestas de ejercicios y marcas de
-// checklist actuales por los indicados. Se usa tras confirmar una importacion.
-function replaceAllData(entries, exercises, checklists) {
+// Sustituye todos los registros, respuestas de ejercicios, marcas de
+// checklist y pequeños pasos actuales por los indicados. Se usa tras
+// confirmar una importacion.
+function replaceAllData(entries, exercises, checklists, pasos) {
   localStorage.setItem(ENERGY_LOG_KEY, JSON.stringify(entries));
   localStorage.setItem(EXERCISES_KEY, JSON.stringify(exercises || {}));
   localStorage.setItem(CHECKLISTS_KEY, JSON.stringify(checklists || {}));
+  localStorage.setItem(PASOS_KEY, JSON.stringify(pasos || {}));
 }

@@ -1127,3 +1127,27 @@ a.bento-card:hover, a.bento-card:focus-visible {
   gap: var(--space-3);
   margin-top: var(--space-3);
 }
+
+/* ---------- Fase 2: paso de un toque en Pequeños pasos (step 14b) ---------- */
+
+.paso-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+
+.paso-card .eyebrow:first-child {
+  margin-top: 0;
+}
+
+.paso-question {
+  margin: 0;
+  font-size: 1.1875rem;
+  font-weight: 600;
+  color: var(--color-dark-text);
+}
+
+.paso-otro-btn {
+  margin-bottom: 0;
+}
