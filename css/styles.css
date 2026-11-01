@@ -450,7 +450,7 @@ footer a {
   line-height: 1;
 }
 
-#log-note {
+.field-textarea {
   width: 100%;
   min-height: 96px;
   padding: var(--space-3) var(--space-4);
@@ -1084,4 +1084,46 @@ a.bento-card:hover, a.bento-card:focus-visible {
 
 .chapter-plan-link-wrap .btn {
   margin-bottom: 0;
+}
+
+/* ---------- Fase 1: nota opcional en Inicio, historial editable en
+   Evolucion, Pequeños pasos (step 14a) ---------- */
+
+#home-note-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+#home-note-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+#home-note-wrap .btn {
+  margin-bottom: 0;
+}
+
+.evolution-entry-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.evolution-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
 }

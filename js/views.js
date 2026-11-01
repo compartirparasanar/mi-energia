@@ -92,11 +92,12 @@ function setActiveNavTab(hash) {
   var tab = 'inicio';
   if (hash.indexOf('/guia') === 0) {
     tab = 'guia';
-  } else if (hash.indexOf('/registro') === 0 || hash.indexOf('/evolucion') === 0) {
-    tab = 'registro';
-  } else if (hash.indexOf('/mis-datos') === 0 || hash === '/instalar' || hash === '/privacidad') {
-    tab = 'ajustes';
+  } else if (hash.indexOf('/pasos') === 0) {
+    tab = 'pasos';
   }
+  // /evolucion, /registro (ruta antigua sin enlace en el menu), /mis-datos,
+  // /instalar y /privacidad se consideran parte de "Inicio" a efectos de
+  // pestaña activa: el menu inferior solo tiene 3 elementos.
   var links = document.querySelectorAll('.bottom-nav a');
   links.forEach(function (link) {
     if (link.getAttribute('data-nav') === tab) {
@@ -133,6 +134,20 @@ function renderHome() {
   html += '<p id="home-log-confirm" class="confirmation confirmation-on-dark"' + (today ? '' : ' hidden') + '>' +
     (today ? 'Ya has registrado hoy. Puedes cambiarlo cuando quieras.' : 'Guardado.') + '</p>';
   html += '<p id="home-skip-msg" class="confirmation confirmation-on-dark" hidden>Vale, hoy no es necesario. Puedes registrar cuando quieras.</p>';
+
+  // Nota opcional: nunca es un paso obligatorio entre el toque y el
+  // guardado. El guardado ya ocurre al tocar un nivel (ver abajo); esta
+  // sección solo aparece despues, y sigue siendo opcional.
+  html += '<div id="home-note-section"' + (today ? '' : ' hidden') + '>';
+  html += '<button type="button" class="bento-skip-link-white" id="home-note-toggle" aria-expanded="false">Añadir nota</button>';
+  html += '<div id="home-note-wrap" hidden>';
+  html += '<label for="home-note" class="exercise-label">Nota (opcional)</label>';
+  html += '<textarea id="home-note" class="field-textarea">' + escapeHtml(today ? today.note : '') + '</textarea>';
+  html += '<button type="button" class="btn" id="home-note-save">Guardar nota</button>';
+  html += '<p id="home-note-confirm" class="confirmation confirmation-on-dark" hidden>Nota guardada.</p>';
+  html += '</div>';
+  html += '</div>';
+
   html += '</div>';
 
   html += '<a class="bento-card bento-card-wide bento-mini-chart" href="#/evolucion">';
@@ -152,11 +167,9 @@ function renderHome() {
 
   html += '</div>';
 
-  html += '<p class="home-footer">Recibes esta app por tu suscripción a @compartir.para.sanar. <a href="#/privacidad">Más sobre privacidad</a></p>';
-
   var isInstalled = window.matchMedia('(display-mode: standalone)').matches || !!window.navigator.standalone;
-  html += '<p class="home-footer"><a href="#/mis-datos">Mis datos y privacidad</a>' +
-    (isInstalled ? '' : ' · <a href="#/instalar">Cómo instalar</a>') + '</p>';
+  html += '<p class="home-footer">Recibes esta app por tu suscripción a @compartir.para.sanar.' +
+    (isInstalled ? '' : ' <a href="#/instalar">Cómo instalar</a>') + '</p>';
 
   document.getElementById('app-content').innerHTML = html;
 
@@ -168,6 +181,12 @@ function renderHome() {
   var levelButtons = document.querySelectorAll('#home-level-buttons .level-btn');
   var logConfirm = document.getElementById('home-log-confirm');
   var skipMsg = document.getElementById('home-skip-msg');
+  var noteSection = document.getElementById('home-note-section');
+  var noteToggle = document.getElementById('home-note-toggle');
+  var noteWrap = document.getElementById('home-note-wrap');
+  var noteTextarea = document.getElementById('home-note');
+  var noteConfirm = document.getElementById('home-note-confirm');
+
   levelButtons.forEach(function (btn) {
     btn.addEventListener('click', function () {
       levelButtons.forEach(function (b) { b.classList.remove('selected'); });
@@ -178,6 +197,7 @@ function renderHome() {
       skipMsg.hidden = true;
       logConfirm.textContent = 'Guardado.';
       logConfirm.hidden = false;
+      noteSection.hidden = false;
     });
   });
 
@@ -185,16 +205,24 @@ function renderHome() {
     logConfirm.hidden = true;
     skipMsg.hidden = false;
   });
+
+  noteToggle.addEventListener('click', function () {
+    var wasHidden = noteWrap.hidden;
+    noteWrap.hidden = !wasHidden;
+    noteToggle.setAttribute('aria-expanded', wasHidden ? 'true' : 'false');
+    noteToggle.textContent = wasHidden ? 'Ocultar nota' : 'Añadir nota';
+  });
+
+  document.getElementById('home-note-save').addEventListener('click', function () {
+    var existing = getTodayEntry();
+    if (!existing) return;
+    saveEntry({ date: todayDateString(), level: existing.level, note: noteTextarea.value });
+    noteConfirm.hidden = false;
+  });
 }
 
 function renderGuideIndex() {
   var html = '<h1>Guía</h1>';
-  html += '<ul class="guide-index">';
-  GUIDE_CONTENT.chapters.forEach(function (ch) {
-    html += '<li><a href="#/guia/' + ch.id + '">' + escapeHtml(ch.title) + '</a></li>';
-  });
-  html += '<li><a href="#/guia/plan-21">Plan día a día (21 días)</a></li>';
-  html += '</ul>';
   html += '<details class="inline-details">';
   html += '<summary>Cómo usar esta guía</summary>';
   html += '<h2>' + escapeHtml(GUIDE_CONTENT.intro.title) + '</h2>';
@@ -202,6 +230,12 @@ function renderGuideIndex() {
     html += renderTextBlock(section.body);
   });
   html += '</details>';
+  html += '<ul class="guide-index">';
+  GUIDE_CONTENT.chapters.forEach(function (ch) {
+    html += '<li><a href="#/guia/' + ch.id + '">' + escapeHtml(ch.title) + '</a></li>';
+  });
+  html += '<li><a href="#/guia/plan-21">Plan día a día (21 días)</a></li>';
+  html += '</ul>';
   document.getElementById('app-content').innerHTML = html;
 }
 
@@ -560,6 +594,30 @@ function renderToolkit() {
   initChecklist('weekly');
 }
 
+// Contenido provisional de la pestaña "Pequeños pasos": reutiliza las
+// checklists diaria y semanal ya existentes (mismo componente que el
+// Capítulo 7 y el Toolkit). En una fase posterior aquí vivirá el "paso de
+// un toque" diario; de momento es solo un acceso directo a estas dos
+// checklists sin tener que entrar en la guía.
+function renderSmallSteps() {
+  var html = '<h1>Pequeños pasos</h1>';
+  html += '<p class="eyebrow">Esto es solo el principio: pronto habrá formas rápidas de hacer un pequeño paso.</p>';
+  html += '<div class="toolkit-grid">';
+
+  html += '<div class="card"><h2>' + escapeHtml(GUIDE_CONTENT.toolkit.dailyChecklist.title) + '</h2>';
+  html += renderChecklistHtml('daily', GUIDE_CONTENT.toolkit.dailyChecklist.items);
+  html += '</div>';
+
+  html += '<div class="card"><h2>' + escapeHtml(GUIDE_CONTENT.toolkit.weeklyChecklist.title) + '</h2>';
+  html += renderChecklistHtml('weekly', GUIDE_CONTENT.toolkit.weeklyChecklist.items);
+  html += '</div>';
+
+  html += '</div>';
+  document.getElementById('app-content').innerHTML = html;
+  initChecklist('daily');
+  initChecklist('weekly');
+}
+
 function renderActionPlan() {
   var html = '<a class="chapter-back-link" href="#/guia/8">‹ Volver al capítulo 8</a>';
   html += '<h1>Plan de acción de 21 días</h1>';
@@ -606,6 +664,19 @@ function formatDisplayDate(dateStr) {
   return day + ' de ' + month;
 }
 
+var LOG_MONTH_SHORT_NAMES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun',
+  'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+// Formato corto de fecha, solo para mostrar en listas largas (el historial
+// de Evolución): "1 nov" en vez de "1 de noviembre".
+function formatShortDate(dateStr) {
+  var parts = String(dateStr).split('-');
+  if (parts.length !== 3) return dateStr;
+  var day = Number(parts[2]);
+  var month = LOG_MONTH_SHORT_NAMES[Number(parts[1]) - 1] || '';
+  return day + ' ' + month;
+}
+
 function renderLog() {
   var today = getTodayEntry();
   var selectedLevel = today ? today.level : '';
@@ -624,7 +695,7 @@ function renderLog() {
   html += '</div>';
   html += '<input type="hidden" id="log-level" value="' + escapeHtml(selectedLevel) + '">';
   html += '<label for="log-note" class="exercise-label">Nota (opcional)</label>';
-  html += '<textarea id="log-note">' + escapeHtml(selectedNote) + '</textarea>';
+  html += '<textarea id="log-note" class="field-textarea">' + escapeHtml(selectedNote) + '</textarea>';
   html += '<button type="submit" id="log-save">Guardar</button>';
   html += '<button type="button" class="bento-skip-link" id="log-skip-btn">Prefiero no registrar hoy</button>';
   html += '<div id="log-confirmation" class="callout" hidden><p class="confirmation">Guardado en tu móvil. Puedes editarlo cuando quieras.</p></div>';
@@ -641,7 +712,7 @@ function renderLog() {
     entries.forEach(function (entry) {
       html += '<li><span class="badge ' + levelBadgeClass(entry.level) + '">' +
         escapeHtml(levelLabel(entry.level)) + '</span> ' +
-        '<span class="log-date">' + escapeHtml(entry.date) + '</span>';
+        '<span class="log-date">' + escapeHtml(formatShortDate(entry.date)) + '</span>';
       if (entry.note) {
         html += '<p class="log-note">' + escapeHtml(entry.note) + '</p>';
       }
@@ -649,8 +720,6 @@ function renderLog() {
     });
     html += '</ul>';
   }
-
-  html += '<p class="home-footer"><a href="#/mis-datos">Mis datos y privacidad</a></p>';
 
   document.getElementById('app-content').innerHTML = html;
 
@@ -682,15 +751,21 @@ function renderLog() {
   });
 }
 
-function renderEvolution() {
+// editingDate (opcional): fecha ISO del registro cuyo formulario de edición
+// está desplegado ahora mismo. Sigue el mismo patrón de re-render completo
+// que el resto de views.js (p.ej. initExerciseToggle): se vuelve a llamar a
+// esta función con la fecha abierta, o con null para cerrarla.
+function renderEvolution(editingDate) {
   var html = '<p class="eyebrow">Últimos 14 días</p><h1>Evolución</h1>';
-  var entries = getEnergyLog().slice(0, 14).reverse();
+  var allEntries = getEnergyLog();
 
-  if (entries.length < 2) {
+  if (allEntries.length < 2) {
     html += '<p>Necesitas al menos 2 registros para ver tu evolución.</p>';
     document.getElementById('app-content').innerHTML = html;
     return;
   }
+
+  var chartEntries = allEntries.slice(0, 14).reverse();
 
   html += '<div class="chart-card"><canvas id="evolution-canvas"></canvas></div>';
   html += '<div class="chart-legend">';
@@ -700,10 +775,81 @@ function renderEvolution() {
   });
   html += '</div>';
 
+  html += '<h2>Historial</h2>';
+  html += '<ul class="log-list">';
+  allEntries.forEach(function (entry) {
+    var isEditing = editingDate === entry.date;
+    html += '<li>';
+    html += '<button type="button" class="evolution-entry-btn" data-date="' + escapeHtml(entry.date) +
+      '" aria-expanded="' + (isEditing ? 'true' : 'false') + '">' +
+      '<span class="badge ' + levelBadgeClass(entry.level) + '">' + escapeHtml(levelLabel(entry.level)) + '</span> ' +
+      '<span class="log-date">' + escapeHtml(formatShortDate(entry.date)) + '</span>' +
+      '</button>';
+    if (entry.note && !isEditing) {
+      html += '<p class="log-note">' + escapeHtml(entry.note) + '</p>';
+    }
+    if (isEditing) {
+      html += '<div class="evolution-edit-form">';
+      html += '<div class="level-buttons evolution-edit-levels">';
+      ['alta', 'media', 'baja'].forEach(function (level) {
+        var isSelected = level === entry.level;
+        html += '<button type="button" class="level-btn' + (isSelected ? ' selected' : '') +
+          '" data-level="' + level + '">' + levelLabel(level) + '</button>';
+      });
+      html += '</div>';
+      html += '<label for="evolution-edit-note" class="exercise-label">Nota (opcional)</label>';
+      html += '<textarea id="evolution-edit-note" class="field-textarea">' + escapeHtml(entry.note || '') + '</textarea>';
+      html += '<div class="confirm-buttons">';
+      html += '<button type="button" class="btn" id="evolution-edit-save">Guardar</button>';
+      html += '<button type="button" class="btn btn-secondary" id="evolution-edit-cancel">Cancelar</button>';
+      html += '</div>';
+      html += '</div>';
+    }
+    html += '</li>';
+  });
+  html += '</ul>';
+
   document.getElementById('app-content').innerHTML = html;
 
   var canvas = document.getElementById('evolution-canvas');
-  drawEvolutionChart(canvas, entries);
+  drawEvolutionChart(canvas, chartEntries);
+
+  var entryButtons = document.querySelectorAll('.evolution-entry-btn');
+  entryButtons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var date = btn.getAttribute('data-date');
+      renderEvolution(editingDate === date ? null : date);
+    });
+  });
+
+  if (editingDate) {
+    var editLevels = document.querySelector('.evolution-edit-levels');
+    var editButtons = editLevels ? editLevels.querySelectorAll('.level-btn') : [];
+    editButtons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        editButtons.forEach(function (x) { x.classList.remove('selected'); });
+        b.classList.add('selected');
+      });
+    });
+
+    var saveBtn = document.getElementById('evolution-edit-save');
+    var cancelBtn = document.getElementById('evolution-edit-cancel');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', function () {
+        var selected = editLevels ? editLevels.querySelector('.level-btn.selected') : null;
+        var level = selected ? selected.getAttribute('data-level') : null;
+        if (!level) return;
+        var note = document.getElementById('evolution-edit-note').value;
+        saveEntry({ date: editingDate, level: level, note: note });
+        renderEvolution(null);
+      });
+    }
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', function () {
+        renderEvolution(null);
+      });
+    }
+  }
 }
 
 function renderMyData() {

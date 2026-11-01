@@ -25,6 +25,9 @@ function router() {
       case '/registro':
         renderLog();
         break;
+      case '/pasos':
+        renderSmallSteps();
+        break;
       case '/evolucion':
         renderEvolution();
         break;
