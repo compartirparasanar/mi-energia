@@ -259,6 +259,20 @@ var GUIDE_CONTENT = {
       ]
     }
   },
+  "energyTips": {
+    "alta": [
+      "Bloque 1 (mañana): la tarea que más energía requiere del día, si la hay.",
+      "Un único \"ritual de arranque\" fijo (ej. café + 5 min sentada antes de mirar el móvil)."
+    ],
+    "media": [
+      "Una sola tarea doméstica \"ancla\" al día, nunca varias seguidas.",
+      "Pausa programada, no solo cuando el cuerpo \"avisa\" (avisa tarde)."
+    ],
+    "baja": [
+      "Bloque 3 (tarde-noche): solo descanso o actividades que te devuelven energía (tu Lista B del Capítulo 3).",
+      "Anotar una frase de cierre: \"hoy hice suficiente\"."
+    ]
+  },
   "actionPlan": {
     "weeks": [
       {

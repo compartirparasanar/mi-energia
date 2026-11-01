@@ -1089,20 +1089,28 @@ a.bento-card:hover, a.bento-card:focus-visible {
 /* ---------- Fase 1: nota opcional en Inicio, historial editable en
    Evolucion, Pequeños pasos (step 14a) ---------- */
 
-#home-note-section {
+#home-extra-section {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
 }
 
-#home-note-wrap {
+#home-extra-wrap {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   margin-top: var(--space-1);
 }
 
-#home-note-wrap .btn {
+/* El atributo hidden del HTML debe ganar siempre a las reglas de arriba:
+   sin esto, el id-selector con display:flex pisaria al [hidden] nativo del
+   navegador y la seccion se veria desplegada aunque tenga el atributo. */
+#home-extra-section[hidden],
+#home-extra-wrap[hidden] {
+  display: none;
+}
+
+#home-extra-wrap .btn {
   margin-bottom: 0;
 }
 
@@ -1149,5 +1157,57 @@ a.bento-card:hover, a.bento-card:focus-visible {
 }
 
 .paso-otro-btn {
+  margin-bottom: 0;
+}
+
+/* ---------- Fase 3: valor de vuelta - etiquetas, consejos y resumen
+   (step 14c-valor) ---------- */
+
+.tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.tag-chip {
+  min-height: 44px;
+  padding: var(--space-2) var(--space-4);
+  background-color: var(--color-white);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-input);
+  color: var(--color-dark-text);
+  font-family: var(--font-ui);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 200ms ease-in-out, border-color 200ms ease-in-out;
+}
+
+.tag-chip.selected {
+  background-color: var(--color-selection-bg);
+  border-color: var(--color-terracotta-dark);
+  color: var(--color-dark-text);
+}
+
+.tips-list {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.evolution-ready-hint {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-secondary);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.evolution-summary p {
+  margin: 0 0 var(--space-2);
+}
+
+.evolution-summary p:last-child {
   margin-bottom: 0;
 }

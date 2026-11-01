@@ -13,6 +13,14 @@ var CHECKLIST_IDS = ['daily', 'weekly'];
 // silenciosos"), para poder cruzar datos en el futuro sin duplicar ids.
 var PASOS_KEY = 'mi-energia-pasos';
 var PASOS_IDS = ['decisiones', 'notificaciones', 'conversaciones', 'cambios', 'ambientes', 'deberia'];
+// Etiquetas opcionales del registro diario (Fase 3, "Valor de vuelta"). Se
+// guardan como parte del propio registro (entry.tags), nunca bloquean el
+// guardado: se pueden añadir o quitar despues de elegir un nivel.
+var LOG_TAGS = ['Dormí mal', 'Mucho esfuerzo', 'Mucho estrés', 'Pude descansar'];
+// Marca de "ya ha visto el resumen de Evolución" (Fase 3): un solo booleano,
+// no un dato de uso. Se guarda aparte del registro para poder borrarla o
+// llevarla en la copia de seguridad igual que el resto.
+var RESUMEN_SEEN_KEY = 'mi-energia-resumen-visto';
 
 function todayDateString() {
   var now = new Date();
@@ -68,6 +76,25 @@ function deleteAllData() {
   localStorage.removeItem(EXERCISES_KEY);
   localStorage.removeItem(CHECKLISTS_KEY);
   localStorage.removeItem(PASOS_KEY);
+  localStorage.removeItem(RESUMEN_SEEN_KEY);
+}
+
+// Valida un array de etiquetas de registro: solo strings presentes en
+// LOG_TAGS. Un array vacio es valido (sin etiquetas ese dia).
+function isValidTagsArray(value) {
+  return Array.isArray(value) && value.every(function (t) {
+    return LOG_TAGS.indexOf(t) !== -1;
+  });
+}
+
+// Devuelve si la persona ya ha visto el resumen de Evolución alguna vez
+// (para no repetir el aviso "Tu resumen está listo" en Inicio).
+function hasSeenResumen() {
+  return localStorage.getItem(RESUMEN_SEEN_KEY) === '1';
+}
+
+function markResumenSeen() {
+  localStorage.setItem(RESUMEN_SEEN_KEY, '1');
 }
 
 // Comprueba recursivamente que un valor de respuesta de ejercicio es solo
@@ -239,14 +266,16 @@ function setPaso(date, key, value) {
 }
 
 // Serializa todos los registros, respuestas de ejercicios, marcas de
-// checklist y pequeños pasos en un JSON descargable como copia de
-// seguridad. No incluye nada más que no esté ya guardado en el dispositivo.
+// checklist, pequeños pasos y la marca de resumen visto en un JSON
+// descargable como copia de seguridad. No incluye nada más que no esté ya
+// guardado en el dispositivo.
 function exportDataJSON() {
   var entries = getEnergyLog();
   var exercises = getAllExerciseAnswers();
   var checklists = getAllChecklistMarks();
   var pasos = getAllPasos();
-  return JSON.stringify({ app: 'mi-energia', version: 4, entries: entries, exercises: exercises, checklists: checklists, pasos: pasos }, null, 2);
+  var resumenSeen = hasSeenResumen();
+  return JSON.stringify({ app: 'mi-energia', version: 5, entries: entries, exercises: exercises, checklists: checklists, pasos: pasos, resumenSeen: resumenSeen }, null, 2);
 }
 
 function isValidLogEntry(entry) {
@@ -257,9 +286,10 @@ function isValidLogEntry(entry) {
 
 // Valida un texto como copia de seguridad de Mi Energía. No escribe nada
 // en localStorage: solo parsea y comprueba el formato. Devuelve
-// {entries, exercises, checklists, pasos} ya saneados, o null si no es
-// valida. Las copias antiguas sin bloque de ejercicios, checklists o pasos
-// son válidas (se usa un objeto vacío para el bloque que falte).
+// {entries, exercises, checklists, pasos, resumenSeen} ya saneados, o null
+// si no es valida. Las copias antiguas sin bloque de ejercicios,
+// checklists, pasos o resumenSeen son válidas (se usa un objeto vacío o
+// false para el bloque que falte).
 function parseBackupJSON(jsonText) {
   var parsed;
   try {
@@ -275,7 +305,8 @@ function parseBackupJSON(jsonText) {
     return {
       date: e.date,
       level: e.level,
-      note: typeof e.note === 'string' ? e.note : ''
+      note: typeof e.note === 'string' ? e.note : '',
+      tags: isValidTagsArray(e.tags) ? e.tags : []
     };
   });
   var rawExercises = (!Array.isArray(parsed) && parsed && parsed.exercises) || {};
@@ -284,15 +315,22 @@ function parseBackupJSON(jsonText) {
   var checklists = isValidChecklistsBlock(rawChecklists) ? rawChecklists : {};
   var rawPasos = (!Array.isArray(parsed) && parsed && parsed.pasos) || {};
   var pasos = isValidPasosBlock(rawPasos) ? rawPasos : {};
-  return { entries: sanitizedEntries, exercises: exercises, checklists: checklists, pasos: pasos };
+  var resumenSeen = (!Array.isArray(parsed) && parsed && typeof parsed.resumenSeen === 'boolean') ?
+    parsed.resumenSeen : false;
+  return { entries: sanitizedEntries, exercises: exercises, checklists: checklists, pasos: pasos, resumenSeen: resumenSeen };
 }
 
 // Sustituye todos los registros, respuestas de ejercicios, marcas de
-// checklist y pequeños pasos actuales por los indicados. Se usa tras
-// confirmar una importacion.
-function replaceAllData(entries, exercises, checklists, pasos) {
+// checklist, pequeños pasos y la marca de resumen visto actuales por los
+// indicados. Se usa tras confirmar una importacion.
+function replaceAllData(entries, exercises, checklists, pasos, resumenSeen) {
   localStorage.setItem(ENERGY_LOG_KEY, JSON.stringify(entries));
   localStorage.setItem(EXERCISES_KEY, JSON.stringify(exercises || {}));
   localStorage.setItem(CHECKLISTS_KEY, JSON.stringify(checklists || {}));
   localStorage.setItem(PASOS_KEY, JSON.stringify(pasos || {}));
+  if (resumenSeen) {
+    localStorage.setItem(RESUMEN_SEEN_KEY, '1');
+  } else {
+    localStorage.removeItem(RESUMEN_SEEN_KEY);
+  }
 }

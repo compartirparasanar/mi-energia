@@ -110,6 +110,40 @@ function setActiveNavTab(hash) {
   });
 }
 
+// HTML del bloque opcional de nota y etiquetas en Inicio (today es la
+// entrada de hoy, o null si todavia no se ha guardado nada). Extraido de
+// renderHome para mantenerla dentro del limite de 150 lineas por funcion.
+function homeExtraSectionHtml(today) {
+  var html = '<div id="home-extra-section"' + (today ? '' : ' hidden') + '>';
+  html += '<button type="button" class="bento-skip-link-white" id="home-extra-toggle" aria-expanded="false">Añadir nota o etiquetas</button>';
+  html += '<div id="home-extra-wrap" hidden>';
+  html += '<p class="exercise-label">Etiquetas (opcional)</p>';
+  html += '<div class="tag-chips" id="home-tags">';
+  LOG_TAGS.forEach(function (tag) {
+    var isChecked = !!(today && Array.isArray(today.tags) && today.tags.indexOf(tag) !== -1);
+    html += '<button type="button" class="tag-chip' + (isChecked ? ' selected' : '') +
+      '" data-tag="' + escapeHtml(tag) + '">' + escapeHtml(tag) + '</button>';
+  });
+  html += '</div>';
+  html += '<label for="home-note" class="exercise-label">Nota (opcional)</label>';
+  html += '<textarea id="home-note" class="field-textarea">' + escapeHtml(today ? today.note : '') + '</textarea>';
+  html += '<button type="button" class="btn" id="home-note-save">Guardar nota</button>';
+  html += '<p id="home-note-confirm" class="confirmation confirmation-on-dark" hidden>Nota guardada.</p>';
+  html += '</div>';
+  html += '</div>';
+  return html;
+}
+
+// HTML del bloque plegable "¿Y ahora qué?" en Inicio (consejos segun el
+// nivel de hoy). Extraido de renderHome por el mismo motivo que arriba.
+function homeTipsSectionHtml(today) {
+  var html = '<details class="inline-details" id="home-tips-section"' + (today ? '' : ' hidden') + '>';
+  html += '<summary>¿Y ahora qué?</summary>';
+  html += '<div id="home-tips-content">' + (today ? tipsListHtml(today.level) : '') + '</div>';
+  html += '</details>';
+  return html;
+}
+
 function renderHome() {
   var today = getTodayEntry();
   var entries = getEnergyLog();
@@ -135,18 +169,14 @@ function renderHome() {
     (today ? 'Ya has registrado hoy. Puedes cambiarlo cuando quieras.' : 'Guardado.') + '</p>';
   html += '<p id="home-skip-msg" class="confirmation confirmation-on-dark" hidden>Vale, hoy no es necesario. Puedes registrar cuando quieras.</p>';
 
-  // Nota opcional: nunca es un paso obligatorio entre el toque y el
-  // guardado. El guardado ya ocurre al tocar un nivel (ver abajo); esta
-  // sección solo aparece despues, y sigue siendo opcional.
-  html += '<div id="home-note-section"' + (today ? '' : ' hidden') + '>';
-  html += '<button type="button" class="bento-skip-link-white" id="home-note-toggle" aria-expanded="false">Añadir nota</button>';
-  html += '<div id="home-note-wrap" hidden>';
-  html += '<label for="home-note" class="exercise-label">Nota (opcional)</label>';
-  html += '<textarea id="home-note" class="field-textarea">' + escapeHtml(today ? today.note : '') + '</textarea>';
-  html += '<button type="button" class="btn" id="home-note-save">Guardar nota</button>';
-  html += '<p id="home-note-confirm" class="confirmation confirmation-on-dark" hidden>Nota guardada.</p>';
-  html += '</div>';
-  html += '</div>';
+  // Nota y etiquetas opcionales: nunca son un paso obligatorio entre el
+  // toque y el guardado. El guardado ya ocurre al tocar un nivel (ver
+  // abajo); esta sección solo aparece despues, y sigue siendo opcional.
+  html += homeExtraSectionHtml(today);
+
+  // "¿Y ahora qué?": consejos literales de la guía segun el nivel elegido.
+  // Opcional, plegado por defecto, y nunca bloquea nada.
+  html += homeTipsSectionHtml(today);
 
   html += '</div>';
 
@@ -157,6 +187,9 @@ function renderHome() {
     html += '<canvas id="home-evolution-canvas"></canvas>';
   } else {
     html += '<p>Aún no hay suficientes registros para ver tu evolución.</p>';
+  }
+  if (entries.length >= 3 && !hasSeenResumen()) {
+    html += '<p class="evolution-ready-hint">Tu resumen está listo.</p>';
   }
   html += '</a>';
 
@@ -181,11 +214,14 @@ function renderHome() {
   var levelButtons = document.querySelectorAll('#home-level-buttons .level-btn');
   var logConfirm = document.getElementById('home-log-confirm');
   var skipMsg = document.getElementById('home-skip-msg');
-  var noteSection = document.getElementById('home-note-section');
-  var noteToggle = document.getElementById('home-note-toggle');
-  var noteWrap = document.getElementById('home-note-wrap');
+  var extraSection = document.getElementById('home-extra-section');
+  var extraToggle = document.getElementById('home-extra-toggle');
+  var extraWrap = document.getElementById('home-extra-wrap');
   var noteTextarea = document.getElementById('home-note');
   var noteConfirm = document.getElementById('home-note-confirm');
+  var tipsSection = document.getElementById('home-tips-section');
+  var tipsContent = document.getElementById('home-tips-content');
+  var tagButtons = document.querySelectorAll('#home-tags .tag-chip');
 
   levelButtons.forEach(function (btn) {
     btn.addEventListener('click', function () {
@@ -193,11 +229,18 @@ function renderHome() {
       btn.classList.add('selected');
       var level = btn.getAttribute('data-level');
       var existing = getTodayEntry();
-      saveEntry({ date: todayDateString(), level: level, note: existing ? existing.note : '' });
+      saveEntry({
+        date: todayDateString(),
+        level: level,
+        note: existing ? existing.note : '',
+        tags: existing && Array.isArray(existing.tags) ? existing.tags : []
+      });
       skipMsg.hidden = true;
       logConfirm.textContent = 'Guardado.';
       logConfirm.hidden = false;
-      noteSection.hidden = false;
+      extraSection.hidden = false;
+      tipsSection.hidden = false;
+      tipsContent.innerHTML = tipsListHtml(level);
     });
   });
 
@@ -206,17 +249,39 @@ function renderHome() {
     skipMsg.hidden = false;
   });
 
-  noteToggle.addEventListener('click', function () {
-    var wasHidden = noteWrap.hidden;
-    noteWrap.hidden = !wasHidden;
-    noteToggle.setAttribute('aria-expanded', wasHidden ? 'true' : 'false');
-    noteToggle.textContent = wasHidden ? 'Ocultar nota' : 'Añadir nota';
+  extraToggle.addEventListener('click', function () {
+    var wasHidden = extraWrap.hidden;
+    extraWrap.hidden = !wasHidden;
+    extraToggle.setAttribute('aria-expanded', wasHidden ? 'true' : 'false');
+    extraToggle.textContent = wasHidden ? 'Ocultar nota o etiquetas' : 'Añadir nota o etiquetas';
+  });
+
+  tagButtons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var existing = getTodayEntry();
+      if (!existing) return;
+      btn.classList.toggle('selected');
+      var tags = Array.isArray(existing.tags) ? existing.tags.slice() : [];
+      var tag = btn.getAttribute('data-tag');
+      var idx = tags.indexOf(tag);
+      if (btn.classList.contains('selected')) {
+        if (idx === -1) tags.push(tag);
+      } else if (idx !== -1) {
+        tags.splice(idx, 1);
+      }
+      saveEntry({ date: todayDateString(), level: existing.level, note: existing.note, tags: tags });
+    });
   });
 
   document.getElementById('home-note-save').addEventListener('click', function () {
     var existing = getTodayEntry();
     if (!existing) return;
-    saveEntry({ date: todayDateString(), level: existing.level, note: noteTextarea.value });
+    saveEntry({
+      date: todayDateString(),
+      level: existing.level,
+      note: noteTextarea.value,
+      tags: Array.isArray(existing.tags) ? existing.tags : []
+    });
     noteConfirm.hidden = false;
   });
 }
@@ -719,6 +784,20 @@ function levelBadgeClass(level) {
   return '';
 }
 
+// Lista de 2 consejos literales de la guía (GUIDE_CONTENT.energyTips) para
+// el nivel de energía indicado. Usada en el bloque "¿Y ahora qué?" de
+// Inicio, tanto en el render inicial como al cambiar de nivel sin recargar
+// toda la página.
+function tipsListHtml(level) {
+  var tips = (GUIDE_CONTENT.energyTips && GUIDE_CONTENT.energyTips[level]) || [];
+  var html = '<ul class="tips-list">';
+  tips.forEach(function (tip) {
+    html += '<li>' + escapeHtml(tip) + '</li>';
+  });
+  html += '</ul>';
+  return html;
+}
+
 var LOG_MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
@@ -805,7 +884,13 @@ function renderLog() {
     var level = levelInput.value;
     if (!level) return;
     var note = document.getElementById('log-note').value;
-    saveEntry({ date: todayDateString(), level: level, note: note });
+    var existingForTags = getTodayEntry();
+    saveEntry({
+      date: todayDateString(),
+      level: level,
+      note: note,
+      tags: existingForTags && Array.isArray(existingForTags.tags) ? existingForTags.tags : []
+    });
     renderLog();
     var confirmation = document.getElementById('log-confirmation');
     if (confirmation) {
@@ -818,11 +903,95 @@ function renderLog() {
   });
 }
 
+// Valor numerico de cada nivel, solo para promediar internamente (nunca se
+// muestra un numero ni una puntuacion a la persona).
+var LOG_LEVEL_VALUE = { alta: 3, media: 2, baja: 1 };
+
+// Construye el resumen determinista (sin IA) de Evolución, en capas segun
+// cuantos dias hay registrados en total. Funcion pura: recibe las entradas
+// ya ordenadas por getEnergyLog() (mas reciente primero) y devuelve un
+// array de lineas de texto (sin HTML). Nunca usa lenguaje causal ("porque"),
+// solo observacional ("parece que"), y nunca compara, puntua ni premia.
+function buildEvolutionSummary(entries) {
+  var total = entries.length;
+  var lines = [];
+
+  if (total < 3) {
+    var missing = 3 - total;
+    lines.push('Apunta 3 días para ver tu evolución. Te falta' + (missing === 1 ? '' : 'n') + ' ' + missing + ' más.');
+    return lines;
+  }
+
+  var counts = { alta: 0, media: 0, baja: 0 };
+  entries.forEach(function (e) { counts[e.level] = (counts[e.level] || 0) + 1; });
+
+  lines.push('Tu primer vistazo');
+  lines.push('Hasta ahora llevas ' + counts.alta + ' día' + (counts.alta === 1 ? '' : 's') +
+    ' con energía alta, ' + counts.media + ' con media y ' + counts.baja + ' con baja.');
+
+  var bestDay = null;
+  for (var i = 0; i < entries.length; i++) {
+    if (entries[i].level === 'alta') {
+      bestDay = entries[i];
+      break;
+    }
+  }
+  if (bestDay) {
+    lines.push('Tu mejor día hasta ahora fue el ' + formatShortDate(bestDay.date) + '.');
+  }
+
+  if (total >= 7) {
+    var todayParts = todayDateString().split('-').map(Number);
+    var todayUTC = Date.UTC(todayParts[0], todayParts[1] - 1, todayParts[2]);
+    var weekCounts = { alta: 0, media: 0, baja: 0 };
+    entries.forEach(function (e) {
+      var parts = e.date.split('-').map(Number);
+      var entryUTC = Date.UTC(parts[0], parts[1] - 1, parts[2]);
+      var diffDays = Math.round((todayUTC - entryUTC) / 86400000);
+      if (diffDays >= 0 && diffDays < 7) {
+        weekCounts[e.level] = (weekCounts[e.level] || 0) + 1;
+      }
+    });
+    lines.push('Esta semana: ' + weekCounts.alta + ' días altos, ' + weekCounts.media + ' medios, ' + weekCounts.baja + ' bajos');
+  }
+
+  if (total >= 14) {
+    var tagLine = null;
+    for (var t = 0; t < LOG_TAGS.length; t++) {
+      var tag = LOG_TAGS[t];
+      var withTag = [];
+      var withoutTag = [];
+      entries.forEach(function (e) {
+        var hasTag = Array.isArray(e.tags) && e.tags.indexOf(tag) !== -1;
+        (hasTag ? withTag : withoutTag).push(LOG_LEVEL_VALUE[e.level] || 0);
+      });
+      if (withTag.length >= 4 && withoutTag.length >= 4) {
+        var avgWith = withTag.reduce(function (a, b) { return a + b; }, 0) / withTag.length;
+        var avgWithout = withoutTag.reduce(function (a, b) { return a + b; }, 0) / withoutTag.length;
+        if (avgWith < avgWithout) {
+          tagLine = 'Parece que los días con ' + tag + ' tu energía fue más baja.';
+        } else if (avgWith > avgWithout) {
+          tagLine = 'Parece que los días con ' + tag + ' tu energía fue más alta.';
+        }
+        if (tagLine) break;
+      }
+    }
+    lines.push(tagLine || 'Todavía son pocos días para sacar conclusiones.');
+  }
+
+  return lines;
+}
+
 // editingDate (opcional): fecha ISO del registro cuyo formulario de edición
 // está desplegado ahora mismo. Sigue el mismo patrón de re-render completo
 // que el resto de views.js (p.ej. initExerciseToggle): se vuelve a llamar a
 // esta función con la fecha abierta, o con null para cerrarla.
 function renderEvolution(editingDate) {
+  // Se marca como "visto" en cuanto se abre esta vista, sin importar
+  // cuantos registros haya: por eso "Tu resumen está listo" en Inicio no
+  // vuelve a aparecer nunca mas.
+  markResumenSeen();
+
   var html = '<p class="eyebrow">Últimos 14 días</p><h1>Evolución</h1>';
   var allEntries = getEnergyLog();
 
@@ -841,6 +1010,15 @@ function renderEvolution(editingDate) {
       escapeHtml(CHART_LEVEL_LABELS[level]) + '</span>';
   });
   html += '</div>';
+
+  var summaryLines = buildEvolutionSummary(allEntries);
+  if (summaryLines.length) {
+    html += '<div class="card evolution-summary">';
+    summaryLines.forEach(function (line) {
+      html += '<p>' + escapeHtml(line) + '</p>';
+    });
+    html += '</div>';
+  }
 
   html += '<h2>Historial</h2>';
   html += '<ul class="log-list">';
@@ -862,6 +1040,14 @@ function renderEvolution(editingDate) {
         var isSelected = level === entry.level;
         html += '<button type="button" class="level-btn' + (isSelected ? ' selected' : '') +
           '" data-level="' + level + '">' + levelLabel(level) + '</button>';
+      });
+      html += '</div>';
+      html += '<p class="exercise-label">Etiquetas (opcional)</p>';
+      html += '<div class="tag-chips evolution-edit-tags">';
+      LOG_TAGS.forEach(function (tag) {
+        var isChecked = Array.isArray(entry.tags) && entry.tags.indexOf(tag) !== -1;
+        html += '<button type="button" class="tag-chip' + (isChecked ? ' selected' : '') +
+          '" data-tag="' + escapeHtml(tag) + '">' + escapeHtml(tag) + '</button>';
       });
       html += '</div>';
       html += '<label for="evolution-edit-note" class="exercise-label">Nota (opcional)</label>';
@@ -899,6 +1085,14 @@ function renderEvolution(editingDate) {
       });
     });
 
+    var editTagsContainer = document.querySelector('.evolution-edit-tags');
+    var editTagButtons = editTagsContainer ? editTagsContainer.querySelectorAll('.tag-chip') : [];
+    editTagButtons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        b.classList.toggle('selected');
+      });
+    });
+
     var saveBtn = document.getElementById('evolution-edit-save');
     var cancelBtn = document.getElementById('evolution-edit-cancel');
     if (saveBtn) {
@@ -907,7 +1101,11 @@ function renderEvolution(editingDate) {
         var level = selected ? selected.getAttribute('data-level') : null;
         if (!level) return;
         var note = document.getElementById('evolution-edit-note').value;
-        saveEntry({ date: editingDate, level: level, note: note });
+        var tags = [];
+        editTagButtons.forEach(function (b) {
+          if (b.classList.contains('selected')) tags.push(b.getAttribute('data-tag'));
+        });
+        saveEntry({ date: editingDate, level: level, note: note, tags: tags });
         renderEvolution(null);
       });
     }
@@ -1018,7 +1216,7 @@ function renderMyData() {
       confirmBtn.className = 'btn btn-danger';
       confirmBtn.textContent = 'Sí, sustituir mis datos';
       confirmBtn.addEventListener('click', function () {
-        replaceAllData(pendingImportData.entries, pendingImportData.exercises, pendingImportData.checklists, pendingImportData.pasos);
+        replaceAllData(pendingImportData.entries, pendingImportData.exercises, pendingImportData.checklists, pendingImportData.pasos, pendingImportData.resumenSeen);
         renderMyData();
         var successEl = document.getElementById('import-success');
         if (successEl) {
@@ -1110,6 +1308,7 @@ function renderPrivacy() {
   html += '<p>Lo mismo ocurre con las respuestas que escribas en los ejercicios de la guía: se guardan solo en este móvil, junto a tus registros de energía, y se incluyen igual en la exportación, la importación y el borrado de datos.</p>';
   html += '<p>Las marcas de las checklists (por ejemplo, la checklist diaria del Capítulo 7 o del Toolkit) también se guardan solo en este móvil, con el mismo tratamiento que el resto de tus datos.</p>';
   html += '<p>Lo mismo ocurre con tus respuestas en "Pequeños pasos" (si hoy te ha pasado algo o no): se guardan solo en este móvil, y se incluyen igual en la exportación, la importación y el borrado de datos.</p>';
+  html += '<p>Las etiquetas opcionales que añadas a un registro (por ejemplo "Dormí mal" o "Pude descansar") se guardan junto a ese registro, solo en este móvil, con el mismo tratamiento que el resto de tus datos.</p>';
 
   html += '<h2>Qué no recogemos</h2>';
   html += '<p>No te pedimos nombre, correo ni ubicación para usar la app. No usamos herramientas de analítica ni medimos cómo usas la app. No hay ningún servicio externo conectado: la app funciona sin conexión a internet y no manda nada a ningún sitio.</p>';
