@@ -1058,6 +1058,13 @@ function renderEvolution(editingDate) {
       '<span class="badge ' + levelBadgeClass(entry.level) + '">' + escapeHtml(levelLabel(entry.level)) + '</span> ' +
       '<span class="log-date">' + escapeHtml(formatShortDate(entry.date)) + '</span>' +
       '</button>';
+    if (!isEditing && Array.isArray(entry.tags) && entry.tags.length) {
+      html += '<p class="log-tags">';
+      entry.tags.forEach(function (tag) {
+        html += '<span class="log-tag-pill">' + escapeHtml(tag) + '</span>';
+      });
+      html += '</p>';
+    }
     if (entry.note && !isEditing) {
       html += '<p class="log-note">' + escapeHtml(entry.note) + '</p>';
     }
