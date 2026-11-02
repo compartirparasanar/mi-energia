@@ -17,6 +17,13 @@
   --color-warning-bg: #FFF8E2;
   --color-danger: #F44236;
   --color-danger-bg: #FDE5E3;
+  /* Variantes solo para texto pequeño sobre esos mismos colores (step-14d):
+     --color-terracotta-dark y --color-danger no llegan a 4,5:1 en texto
+     normal sobre beige/crema o blanco. Los colores "literales de la guia"
+     (success/warning/danger, terracotta-dark para fondos y bordes) no se
+     tocan: estas son tonos nuevos, mas oscuros, solo para texto. */
+  --color-terracotta-text: #8C4430;
+  --color-danger-text: #B3261E;
 
   --font-heading: "Playfair Display", Georgia, "Times New Roman", serif;
   --font-ui: "Tenor Sans", -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -594,8 +601,8 @@ footer a {
 }
 
 .btn-danger {
-  background-color: var(--color-danger);
-  color: var(--color-dark-text);
+  background-color: var(--color-danger-text);
+  color: var(--color-white);
 }
 
 .btn-danger:hover, .btn-danger:focus-visible {
@@ -604,7 +611,7 @@ footer a {
 
 .btn-outline {
   background-color: transparent;
-  color: var(--color-terracotta-dark);
+  color: var(--color-terracotta-text);
   border: 2px solid var(--color-terracotta-dark);
 }
 
@@ -938,7 +945,7 @@ a.bento-card:hover, a.bento-card:focus-visible {
 }
 
 .callout .eyebrow {
-  color: var(--color-terracotta-dark);
+  color: var(--color-terracotta-text);
 }
 
 /* ---------- Saludo de Inicio ---------- */
@@ -949,6 +956,12 @@ a.bento-card:hover, a.bento-card:focus-visible {
 
 .home-greeting h1 {
   margin: 0;
+}
+
+.home-welcome-back {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-secondary);
+  font-size: 1rem;
 }
 
 /* ---------- Modificadores de tarjetas bento ---------- */
@@ -1053,6 +1066,24 @@ a.bento-card:hover, a.bento-card:focus-visible {
 
 .inline-details[open] summary {
   margin-bottom: var(--space-3);
+}
+
+/* Dentro del bloque "¿Y ahora qué?" de Inicio, la tarjeta de fondo es
+   terracotta-dark: el marron normal de .inline-details/.exercise-label
+   no llega a 4,5:1 ahi (step-14d), asi que se fuerza blanco igual que el
+   resto del texto de esa tarjeta. */
+.bento-card-hero .inline-details summary {
+  color: var(--color-white);
+  text-decoration-color: rgba(255, 255, 255, 0.5);
+}
+
+.bento-card-hero .inline-details summary:hover,
+.bento-card-hero .inline-details summary:focus-visible {
+  text-decoration-color: var(--color-white);
+}
+
+.bento-card-hero .exercise-label {
+  color: var(--color-white);
 }
 
 .platform-details {

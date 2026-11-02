@@ -110,6 +110,27 @@ function setActiveNavTab(hash) {
   });
 }
 
+// Dias transcurridos desde una fecha YYYY-MM-DD hasta hoy, en dias civiles
+// (mismo calculo UTC que usa buildEvolutionSummary para "esta semana").
+function daysSinceDate(dateStr) {
+  var todayParts = todayDateString().split('-').map(Number);
+  var todayUTC = Date.UTC(todayParts[0], todayParts[1] - 1, todayParts[2]);
+  var parts = dateStr.split('-').map(Number);
+  var entryUTC = Date.UTC(parts[0], parts[1] - 1, parts[2]);
+  return Math.round((todayUTC - entryUTC) / 86400000);
+}
+
+// Sello y saludo de Inicio, con la "bienvenida de nuevo" opcional
+// (step-14d). Extraido de renderHome por el limite de 150 lineas.
+function homeGreetingHtml(showWelcomeBack) {
+  var html = '<div class="home-seal"><img src="assets/logo_b-transparente.svg" alt="Sello compartir · para · sanar" width="160" height="160"></div>';
+  html += '<div class="home-greeting"><p class="eyebrow">@compartir.para.sanar</p><h1>Hola</h1>';
+  html += '<p id="home-welcome-back" class="home-welcome-back"' + (showWelcomeBack ? '' : ' hidden') +
+    '>Qué bien verte. Poquito a poco.</p>';
+  html += '</div>';
+  return html;
+}
+
 // HTML del bloque opcional de nota y etiquetas en Inicio (today es la
 // entrada de hoy, o null si todavia no se ha guardado nada). Extraido de
 // renderHome para mantenerla dentro del limite de 150 lineas por funcion.
@@ -148,8 +169,13 @@ function renderHome() {
   var today = getTodayEntry();
   var entries = getEnergyLog();
 
-  var html = '<div class="home-seal"><img src="assets/logo_b-transparente.svg" alt="Sello compartir · para · sanar" width="160" height="160"></div>';
-  html += '<div class="home-greeting"><p class="eyebrow">@compartir.para.sanar</p><h1>Hola</h1></div>';
+  // "Bienvenida de nuevo" (step-14d): si hace 3 dias o mas que no se
+  // registra nada, un saludo sin contar dias ni reprochar. Desaparece en
+  // cuanto se registra (aqui, porque today ya existiria; y al momento, al
+  // ocultarla a mano en el click del nivel, ver mas abajo).
+  var showWelcomeBack = !today && entries.length > 0 && daysSinceDate(entries[0].date) >= 3;
+
+  var html = homeGreetingHtml(showWelcomeBack);
 
   html += '<div class="bento-grid">';
 
@@ -222,6 +248,7 @@ function renderHome() {
   var tipsSection = document.getElementById('home-tips-section');
   var tipsContent = document.getElementById('home-tips-content');
   var tagButtons = document.querySelectorAll('#home-tags .tag-chip');
+  var welcomeBack = document.getElementById('home-welcome-back');
 
   levelButtons.forEach(function (btn) {
     btn.addEventListener('click', function () {
@@ -235,6 +262,7 @@ function renderHome() {
         note: existing ? existing.note : '',
         tags: existing && Array.isArray(existing.tags) ? existing.tags : []
       });
+      if (welcomeBack) welcomeBack.hidden = true;
       skipMsg.hidden = true;
       logConfirm.textContent = 'Guardado.';
       logConfirm.hidden = false;
