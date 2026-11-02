@@ -8,9 +8,9 @@ var EXERCISES_KEY = 'mi-energia-ejercicios';
 var EXERCISE_IDS = ['ex-1-1', 'ex-2-1', 'ex-3-1', 'ex-3-2', 'ex-5-1', 'ex-6-1'];
 var CHECKLISTS_KEY = 'mi-energia-checklists';
 var CHECKLIST_IDS = ['daily', 'weekly'];
-// "Pequeños pasos" (paso de un toque, Fase 2): mismas 6 claves que
-// EXERCISE_SCHEMA['ex-3-2'].checks en views.js (Ejercicio 3.2, "ladrones
-// silenciosos"), para poder cruzar datos en el futuro sin duplicar ids.
+// "Pequeño paso de hoy" (paso de un toque): mismas 6 claves que
+// GUIDE_CONTENT.pasoPreguntas en content.js (las preguntas cortas basadas
+// en el Ejercicio 3.2, "ladrones silenciosos"), para no duplicar ids.
 var PASOS_KEY = 'mi-energia-pasos';
 var PASOS_IDS = ['decisiones', 'notificaciones', 'conversaciones', 'cambios', 'ambientes', 'deberia'];
 // Etiquetas opcionales del registro diario (Fase 3, "Valor de vuelta"). Se
@@ -21,6 +21,20 @@ var LOG_TAGS = ['Dormí mal', 'Mucho esfuerzo', 'Mucho estrés', 'Pude descansar
 // no un dato de uso. Se guarda aparte del registro para poder borrarla o
 // llevarla en la copia de seguridad igual que el resto.
 var RESUMEN_SEEN_KEY = 'mi-energia-resumen-visto';
+// "Mis cosas" (step-14e, "Mi día"): ítems que la persona añade a mano con
+// "+ Añadir la mía", además de la lista fija del autor en content.js. Los 3
+// primeros grupos alimentan los grupos de Mi día; "quitan" es solo para el
+// Ejercicio 1 ("¿Qué te quita energía?"), no se usa en ningún otro sitio.
+var MIS_COSAS_KEY = 'mi-energia-mis-cosas';
+var MIS_COSAS_GROUPS = ['pesan', 'ligeras', 'recargan', 'quitan'];
+// "Mi día" (step-14e): por fecha, las cosas elegidas hoy (chosen) y cuáles
+// se marcaron como hechas al "Cerrar el día" (done). Sin rachas ni memoria
+// entre días: cada fecha es independiente.
+var MI_DIA_KEY = 'mi-energia-mi-dia';
+// Último capítulo de la guía visitado (step-14e), para la tarjeta "Seguir
+// con la guía" / "Empezar la guía" de Inicio. Un solo número, no un dato de
+// uso: no cuenta cuántas veces se ha leído, solo el más reciente.
+var ULTIMO_CAPITULO_KEY = 'mi-energia-ultimo-capitulo';
 
 function todayDateString() {
   var now = new Date();
@@ -77,6 +91,9 @@ function deleteAllData() {
   localStorage.removeItem(CHECKLISTS_KEY);
   localStorage.removeItem(PASOS_KEY);
   localStorage.removeItem(RESUMEN_SEEN_KEY);
+  localStorage.removeItem(MIS_COSAS_KEY);
+  localStorage.removeItem(MI_DIA_KEY);
+  localStorage.removeItem(ULTIMO_CAPITULO_KEY);
 }
 
 // Valida un array de etiquetas de registro: solo strings presentes en
@@ -97,12 +114,142 @@ function markResumenSeen() {
   localStorage.setItem(RESUMEN_SEEN_KEY, '1');
 }
 
+// Valida un array de "mis cosas" de un grupo: solo strings no vacíos.
+function isValidCosasArray(value) {
+  return Array.isArray(value) && value.every(function (v) {
+    return typeof v === 'string' && v.trim() !== '';
+  });
+}
+
+function isValidMisCosas(obj) {
+  if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
+    return false;
+  }
+  return Object.keys(obj).every(function (g) {
+    return MIS_COSAS_GROUPS.indexOf(g) !== -1 && isValidCosasArray(obj[g]);
+  });
+}
+
+// Devuelve las 4 listas de "mis cosas" (siempre las 4 claves presentes,
+// vacías si no se ha añadido nada todavía).
+function getMisCosas() {
+  var raw = localStorage.getItem(MIS_COSAS_KEY);
+  var data = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    data = {};
+  }
+  if (!isValidMisCosas(data)) data = {};
+  var result = {};
+  MIS_COSAS_GROUPS.forEach(function (g) {
+    result[g] = Array.isArray(data[g]) ? data[g] : [];
+  });
+  return result;
+}
+
+// Añade una cosa propia a un grupo (sin duplicados, ignora texto vacío).
+function addMiCosa(group, label) {
+  if (MIS_COSAS_GROUPS.indexOf(group) === -1) return;
+  label = String(label || '').trim();
+  if (!label) return;
+  var all = getMisCosas();
+  if (all[group].indexOf(label) === -1) {
+    all[group].push(label);
+    localStorage.setItem(MIS_COSAS_KEY, JSON.stringify(all));
+  }
+}
+
+// Valida el registro de "Mi día" de un dia concreto: chosen (array de
+// strings, lo elegido hoy) y done (objeto string->boolean, lo marcado al
+// Cerrar el día). Ambos son opcionales por separado.
+function isValidMiDiaDay(day) {
+  if (day === null || typeof day !== 'object' || Array.isArray(day)) {
+    return false;
+  }
+  var chosenOk = !('chosen' in day) || isValidCosasArray(day.chosen);
+  var doneOk = !('done' in day) || (day.done !== null && typeof day.done === 'object' &&
+    !Array.isArray(day.done) && Object.keys(day.done).every(function (k) {
+      return typeof day.done[k] === 'boolean';
+    }));
+  return chosenOk && doneOk;
+}
+
+function isValidMiDiaBlock(obj) {
+  if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
+    return false;
+  }
+  return Object.keys(obj).every(function (date) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) && isValidMiDiaDay(obj[date]);
+  });
+}
+
+function getAllMiDia() {
+  var raw = localStorage.getItem(MI_DIA_KEY);
+  var data = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    data = {};
+  }
+  return isValidMiDiaBlock(data) ? data : {};
+}
+
+// Devuelve lo elegido y lo marcado de un día concreto (nunca null: arrays y
+// objetos vacíos si no hay nada guardado ese día).
+function getMiDiaForDate(date) {
+  var all = getAllMiDia();
+  var day = all[date];
+  return {
+    chosen: (day && Array.isArray(day.chosen)) ? day.chosen : [],
+    done: (day && day.done && typeof day.done === 'object') ? day.done : {}
+  };
+}
+
+function setMiDiaChosen(date, chosen) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !isValidCosasArray(chosen)) return;
+  var all = getAllMiDia();
+  var day = (all[date] && typeof all[date] === 'object') ? all[date] : {};
+  day.chosen = chosen;
+  all[date] = day;
+  localStorage.setItem(MI_DIA_KEY, JSON.stringify(all));
+}
+
+function setMiDiaDone(date, label, value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || typeof label !== 'string') return;
+  var all = getAllMiDia();
+  var day = (all[date] && typeof all[date] === 'object') ? all[date] : {};
+  var done = (day.done && typeof day.done === 'object') ? day.done : {};
+  done[label] = !!value;
+  day.done = done;
+  all[date] = day;
+  localStorage.setItem(MI_DIA_KEY, JSON.stringify(all));
+}
+
+// Último capítulo de la guía visitado, para la tarjeta de Inicio. null si
+// todavía no se ha abierto ningún capítulo.
+function getUltimoCapitulo() {
+  var raw = localStorage.getItem(ULTIMO_CAPITULO_KEY);
+  var n = Number(raw);
+  return (raw !== null && Number.isInteger(n) && n >= 1 && n <= 9) ? n : null;
+}
+
+function setUltimoCapitulo(n) {
+  n = Number(n);
+  if (Number.isInteger(n) && n >= 1 && n <= 9) {
+    localStorage.setItem(ULTIMO_CAPITULO_KEY, String(n));
+  }
+}
+
 // Comprueba recursivamente que un valor de respuesta de ejercicio es solo
 // texto, booleano o un objeto anidado de esos mismos tipos (como los dias
 // del Ejercicio 2.1, que guardan {nivel, nota} por cada dia).
 function isValidExerciseValue(value, depth) {
   if (typeof value === 'string' || typeof value === 'boolean') {
     return true;
+  }
+  if (Array.isArray(value)) {
+    return value.every(function (v) { return typeof v === 'string'; });
   }
   if (depth > 0 && value !== null && typeof value === 'object' && !Array.isArray(value)) {
     return Object.keys(value).every(function (key) {
@@ -275,7 +422,13 @@ function exportDataJSON() {
   var checklists = getAllChecklistMarks();
   var pasos = getAllPasos();
   var resumenSeen = hasSeenResumen();
-  return JSON.stringify({ app: 'mi-energia', version: 5, entries: entries, exercises: exercises, checklists: checklists, pasos: pasos, resumenSeen: resumenSeen }, null, 2);
+  var misCosas = getMisCosas();
+  var miDia = getAllMiDia();
+  var ultimoCapitulo = getUltimoCapitulo();
+  return JSON.stringify({
+    app: 'mi-energia', version: 6, entries: entries, exercises: exercises, checklists: checklists,
+    pasos: pasos, resumenSeen: resumenSeen, misCosas: misCosas, miDia: miDia, ultimoCapitulo: ultimoCapitulo
+  }, null, 2);
 }
 
 function isValidLogEntry(entry) {
@@ -317,13 +470,23 @@ function parseBackupJSON(jsonText) {
   var pasos = isValidPasosBlock(rawPasos) ? rawPasos : {};
   var resumenSeen = (!Array.isArray(parsed) && parsed && typeof parsed.resumenSeen === 'boolean') ?
     parsed.resumenSeen : false;
-  return { entries: sanitizedEntries, exercises: exercises, checklists: checklists, pasos: pasos, resumenSeen: resumenSeen };
+  var rawMisCosas = (!Array.isArray(parsed) && parsed && parsed.misCosas) || {};
+  var misCosas = isValidMisCosas(rawMisCosas) ? rawMisCosas : {};
+  var rawMiDia = (!Array.isArray(parsed) && parsed && parsed.miDia) || {};
+  var miDia = isValidMiDiaBlock(rawMiDia) ? rawMiDia : {};
+  var rawUltimoCapitulo = (!Array.isArray(parsed) && parsed) ? parsed.ultimoCapitulo : null;
+  var ultimoCapitulo = (Number.isInteger(rawUltimoCapitulo) && rawUltimoCapitulo >= 1 && rawUltimoCapitulo <= 9) ?
+    rawUltimoCapitulo : null;
+  return {
+    entries: sanitizedEntries, exercises: exercises, checklists: checklists, pasos: pasos,
+    resumenSeen: resumenSeen, misCosas: misCosas, miDia: miDia, ultimoCapitulo: ultimoCapitulo
+  };
 }
 
 // Sustituye todos los registros, respuestas de ejercicios, marcas de
 // checklist, pequeños pasos y la marca de resumen visto actuales por los
 // indicados. Se usa tras confirmar una importacion.
-function replaceAllData(entries, exercises, checklists, pasos, resumenSeen) {
+function replaceAllData(entries, exercises, checklists, pasos, resumenSeen, misCosas, miDia, ultimoCapitulo) {
   localStorage.setItem(ENERGY_LOG_KEY, JSON.stringify(entries));
   localStorage.setItem(EXERCISES_KEY, JSON.stringify(exercises || {}));
   localStorage.setItem(CHECKLISTS_KEY, JSON.stringify(checklists || {}));
@@ -332,5 +495,12 @@ function replaceAllData(entries, exercises, checklists, pasos, resumenSeen) {
     localStorage.setItem(RESUMEN_SEEN_KEY, '1');
   } else {
     localStorage.removeItem(RESUMEN_SEEN_KEY);
+  }
+  localStorage.setItem(MIS_COSAS_KEY, JSON.stringify(misCosas || {}));
+  localStorage.setItem(MI_DIA_KEY, JSON.stringify(miDia || {}));
+  if (Number.isInteger(ultimoCapitulo) && ultimoCapitulo >= 1 && ultimoCapitulo <= 9) {
+    localStorage.setItem(ULTIMO_CAPITULO_KEY, String(ultimoCapitulo));
+  } else {
+    localStorage.removeItem(ULTIMO_CAPITULO_KEY);
   }
 }

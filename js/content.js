@@ -259,18 +259,111 @@ var GUIDE_CONTENT = {
       ]
     }
   },
-  "energyTips": {
-    "alta": [
-      "Bloque 1 (mañana): la tarea que más energía requiere del día, si la hay.",
-      "Un único \"ritual de arranque\" fijo (ej. café + 5 min sentada antes de mirar el móvil)."
+  "miDiaFrases": {
+    "alta": "Hoy hay margen. Elige hasta 3 cosas y deja la última parte del día libre.",
+    "media": "Reparte lo que tienes. Elige hasta 2 cosas, con una pesada como máximo.",
+    "baja": "Hoy toca mantenimiento. Elige 1 cosa. Con eso basta. 🤍"
+  },
+  "miDia": {
+    "subtitulos": {
+      "alta": "Hasta 3 cosas para hoy",
+      "media": "Hasta 2 cosas para hoy",
+      "baja": "Solo 1 cosa para hoy"
+    },
+    "primeraVez": "Toca las cosas que sueles tener en tu día. Puedes cambiarlas cuando quieras.",
+    "grupos": {
+      "pesan": {
+        "label": "Pesan",
+        "items": [
+          "Hacer la compra",
+          "Un recado fuera de casa",
+          "Quedar con alguien",
+          "Cocinar algo elaborado",
+          "Contestar mensajes acumulados",
+          "Una llamada o gestión larga"
+        ]
+      },
+      "ligeras": {
+        "label": "Ligeras",
+        "items": [
+          "Una tarea de casa (solo una)",
+          "Cocinar algo sencillo",
+          "Una salida corta",
+          "Trabajar con pausas",
+          "Preparar lo de mañana (ropa, comida)"
+        ]
+      },
+      "recargan": {
+        "label": "Me recargan",
+        "items": [
+          "10 minutos en silencio",
+          "Una infusión sentada",
+          "Estar con mi mascota",
+          "Hacer algo sin objetivo (pintar, escuchar música…)",
+          "Descansar sin pantallas"
+        ]
+      }
+    },
+    "ordenPorNivel": {
+      "alta": ["pesan", "ligeras", "recargan"],
+      "media": ["ligeras", "pesan", "recargan"],
+      "baja": ["recargan", "pesan", "ligeras"]
+    },
+    "avisoLimite": "Hoy con {n} es suficiente. Puedes cambiar una de las que elegiste.",
+    "cerrarElDia": {
+      "titulo": "Cerrar el día",
+      "pregunta": "¿Qué has hecho de lo que elegiste?",
+      "mensajeConMarcas": "Hoy hice suficiente. 🤍",
+      "mensajeSinMarcas": "Hay días que solo toca aguantar. Hoy también cuenta."
+    }
+  },
+  "pasoPreguntas": [
+    { "key": "decisiones", "label": "¿Hoy has tomado muchas decisiones pequeñas seguidas?" },
+    { "key": "notificaciones", "label": "¿Has pasado mucho rato con notificaciones o redes?" },
+    { "key": "conversaciones", "label": "¿Has estado de pie hablando más de lo que podías?" },
+    { "key": "cambios", "label": "¿Te han cambiado un plan a última hora?" },
+    { "key": "ambientes", "label": "¿Has estado en un sitio con mucho ruido o luz?" },
+    { "key": "deberia", "label": "¿Has sentido que deberías poder con todo?" }
+  ],
+  "pasoCierre": "Gracias por prestarle atención a esto. Listo por hoy.",
+  "ejerciciosIntro": "Tres ejercicios de menos de 2 minutos. Ninguno es obligatorio.",
+  "ejercicioE1": {
+    "titulo": "Mis dos listas",
+    "pantalla1": {
+      "pregunta": "¿Qué te quita energía?",
+      "chips": ["Mensajes acumulados", "Ruido o luz fuerte", "Decidir sin plan", "Estar de pie hablando", "Cambios de plan"]
+    },
+    "pantalla2": {
+      "pregunta": "¿Qué te devuelve energía?",
+      "chips": ["10 minutos en silencio", "Una infusión sentada", "Estar con mi mascota", "Hacer algo sin objetivo (pintar, escuchar música…)", "Descansar sin pantallas"]
+    },
+    "final": "Guardado. Estas son tus cosas para Mi día."
+  },
+  "ejercicioE2": {
+    "titulo": "Mi ritual mínimo",
+    "intro1": "Elige un momento: mañana, tarde o noche.",
+    "intro2": "Toca 3 pasos.",
+    "opciones": [
+      "Preparar la ropa la noche anterior",
+      "Café tranquilo, sentado/a, 5 min antes del móvil",
+      "Una sola tarea de casa",
+      "Apagar pantallas 20 min antes",
+      "Cerrar con \"hoy hice suficiente\""
     ],
-    "media": [
-      "Una sola tarea doméstica \"ancla\" al día, nunca varias seguidas.",
-      "Pausa programada, no solo cuando el cuerpo \"avisa\" (avisa tarde)."
+    "final": "Ese es tu ritual. Con uno basta."
+  },
+  "ejercicioE3": {
+    "titulo": "El filtro de las 3 preguntas",
+    "preguntas": [
+      "¿Entra en la energía que tengo esta semana?",
+      "¿Puede esperar, delegarse o simplificarse?",
+      "Si digo que sí, ¿puedo pagar lo que me va a costar?"
     ],
-    "baja": [
-      "Bloque 3 (tarde-noche): solo descanso o actividades que te devuelven energía (tu Lista B del Capítulo 3).",
-      "Anotar una frase de cierre: \"hoy hice suficiente\"."
+    "resultadoIntro": "Mejor no por ahora. Puedes decir:",
+    "frases": [
+      "Ahora no puedo, te confirmo.",
+      "Esta semana voy con energía limitada, ¿lo dejamos para la siguiente?",
+      "Puedo hacer esto, pero necesito ayuda con esto otro."
     ]
   },
   "actionPlan": {

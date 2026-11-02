@@ -637,6 +637,18 @@ footer a {
   background-color: var(--color-selection-bg);
 }
 
+/* Boton de llamada a la accion sobre la tarjeta terracotta-dark de Inicio
+   (step-14e, "Elegir mi día"): .btn-outline no sirve ahi, su texto esta
+   pensado para fondos claros y no llegaria a 4,5:1 sobre ese rojo. */
+.btn-on-dark {
+  background-color: var(--color-white);
+  color: var(--color-dark-text);
+}
+
+.btn-on-dark:hover, .btn-on-dark:focus-visible {
+  filter: brightness(0.96);
+}
+
 .confirm-buttons {
   display: flex;
   gap: var(--space-3);
@@ -662,13 +674,6 @@ footer a {
   margin-top: 0;
 }
 
-.exercise-form {
-  margin: var(--space-5) 0 var(--space-6);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
 .exercise-label {
   display: block;
   margin-bottom: var(--space-2);
@@ -677,7 +682,7 @@ footer a {
   color: var(--color-brown);
 }
 
-.exercise-input, .exercise-select {
+.exercise-input {
   width: 100%;
   min-height: 48px;
   padding: var(--space-3) var(--space-4);
@@ -687,58 +692,6 @@ footer a {
   font-size: 1rem;
   color: var(--color-dark-text);
   background-color: var(--color-white);
-}
-
-.exercise-day {
-  background-color: var(--color-beige);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-  padding: var(--space-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.exercise-day-label {
-  margin: 0;
-  font-family: var(--font-ui);
-  font-weight: 700;
-  color: var(--color-brown);
-}
-
-.exercise-level-buttons {
-  margin: 0;
-}
-
-.exercise-check {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: 44px;
-  padding: var(--space-3) var(--space-4);
-  background-color: var(--color-beige);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-  font-size: 1rem;
-  color: var(--color-dark-text);
-}
-
-.exercise-check input[type="checkbox"] {
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-}
-
-.exercise-save-btn {
-  margin-top: var(--space-2);
-}
-
-.exercise-saved-msg {
-  color: var(--color-dark-text);
-  font-weight: 600;
-  margin: 0;
 }
 
 /* ---------- Checklists marcables (capitulo 7 y toolkit) ---------- */
@@ -1238,14 +1191,6 @@ a.bento-card:hover, a.bento-card:focus-visible {
   color: var(--color-dark-text);
 }
 
-.tips-list {
-  margin: 0;
-  padding-left: var(--space-5);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
 .evolution-ready-hint {
   margin: var(--space-2) 0 0;
   color: var(--color-text-secondary);
@@ -1259,4 +1204,63 @@ a.bento-card:hover, a.bento-card:focus-visible {
 
 .evolution-summary p:last-child {
   margin-bottom: 0;
+}
+
+/* ---------- step-14e: Mi día y Herramientas ---------- */
+
+.mi-dia-group {
+  margin: var(--space-4) 0;
+}
+
+.mi-dia-add-row {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.mi-dia-add-row .mi-dia-add-input,
+.mi-dia-add-row .ejercicio-e1-add-input {
+  flex: 1;
+  min-width: 10rem;
+}
+
+.mi-dia-add-row .btn,
+.mi-dia-add-row button {
+  width: auto;
+  margin: 0;
+}
+
+.mi-dia-cerrar-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+#mi-dia-limit-warning {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+#mi-dia-limit-warning .btn {
+  width: auto;
+  margin: 0;
+}
+
+.ejercicio-e3-frase {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin: 0 0 var(--space-3);
+}
+
+.ejercicio-e3-frase .btn {
+  width: auto;
+  margin: 0;
+  flex-shrink: 0;
 }

@@ -26,7 +26,10 @@ function router() {
         renderLog();
         break;
       case '/pasos':
-        renderSmallSteps();
+        renderMiDia();
+        break;
+      case '/herramientas':
+        renderEjercicios();
         break;
       case '/evolucion':
         renderEvolution();
