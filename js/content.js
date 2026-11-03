@@ -364,7 +364,8 @@ var GUIDE_CONTENT = {
       "Ahora no puedo, te confirmo.",
       "Esta semana voy con energía limitada, ¿lo dejamos para la siguiente?",
       "Puedo hacer esto, pero necesito ayuda con esto otro."
-    ]
+    ],
+    "todoBienMensaje": "Entra en tu energía. Adelante, a tu ritmo."
   },
   "actionPlan": {
     "weeks": [

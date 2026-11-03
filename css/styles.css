@@ -74,6 +74,12 @@
   box-sizing: border-box;
 }
 
+/* step-14f: casillas nativas (checklists, Cerrar el día) con el color
+   terracota de la app en vez del azul por defecto del sistema. */
+input[type="checkbox"] {
+  accent-color: var(--color-terracotta-dark);
+}
+
 html {
   overflow-x: hidden;
 }
@@ -178,6 +184,21 @@ a:hover, a:focus-visible {
 
 /* ---------- Estructura de pagina ---------- */
 
+/* Fondo solido para la zona de la barra de estado (hora, bateria) en modo
+   standalone de iOS (step-14f): sin esto, al hacer scroll el contenido de
+   la pagina pasa por detras de esa zona, que es transparente de por si.
+   Fijo, independiente de si el resto de la cabecera hace scroll o no. */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: env(safe-area-inset-top, 0);
+  background-color: var(--color-beige);
+  z-index: 25;
+}
+
 header.top-bar {
   background-color: var(--color-beige);
   border-bottom: 1px solid var(--color-border);
@@ -204,7 +225,7 @@ header.top-bar {
 main#app-content {
   max-width: var(--max-width-content);
   margin: 0 auto;
-  padding: var(--space-6) var(--space-5) calc(var(--space-8) + 72px);
+  padding: var(--space-4) var(--space-5) calc(var(--space-8) + 72px);
 }
 
 footer {
@@ -281,12 +302,14 @@ footer a {
 .home-seal {
   display: flex;
   justify-content: center;
-  margin: var(--space-5) 0 var(--space-3);
+  margin: var(--space-2) 0 var(--space-1);
 }
 
+/* step-14f: mas pequeño para que la pregunta y la tarjeta de evolución se
+   vean sin bajar en un movil de 360x640. */
 .home-seal img {
-  width: 160px;
-  height: 160px;
+  width: 72px;
+  height: 72px;
 }
 
 /* ---------- Recuadros destacados y firma ---------- */
@@ -600,6 +623,7 @@ footer a {
   font-size: 1.1875rem;
   font-weight: 700;
   text-align: center;
+  text-decoration: none;
   cursor: pointer;
   transition: background-color 200ms ease-in-out, filter 200ms ease-in-out;
 }
@@ -793,15 +817,15 @@ footer a {
 .bento-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--space-5);
-  margin: var(--space-7) 0;
+  gap: var(--space-4);
+  margin: var(--space-4) 0;
 }
 
 .bento-card {
   background-color: var(--color-white);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
-  padding: var(--space-5);
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -827,8 +851,8 @@ a.bento-card:hover, a.bento-card:focus-visible {
   grid-column: 1 / -1;
   background-color: var(--color-terracotta-dark);
   color: var(--color-white);
-  padding: var(--space-5);
-  gap: var(--space-4);
+  padding: var(--space-4);
+  gap: var(--space-3);
 }
 
 .bento-card-hero h2 {
@@ -842,10 +866,10 @@ a.bento-card:hover, a.bento-card:focus-visible {
 .bento-hero-well {
   background-color: var(--color-white);
   border-radius: var(--radius-card);
-  padding: var(--space-4);
+  padding: var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 .bento-skip-link {
@@ -922,7 +946,7 @@ a.bento-card:hover, a.bento-card:focus-visible {
 /* ---------- Saludo de Inicio ---------- */
 
 .home-greeting {
-  margin: var(--space-5) 0 var(--space-4);
+  margin: var(--space-3) 0 var(--space-2);
 }
 
 .home-greeting h1 {
@@ -1018,21 +1042,39 @@ a.bento-card:hover, a.bento-card:focus-visible {
   margin: var(--space-4) 0;
 }
 
+/* step-14f: min 48px de alto (objetivo tactil) y una flecha que gira al
+   abrir, en vez del subrayado de antes — la flecha ya deja claro que se
+   despliega, y usa currentColor para seguir leyendose bien sobre la
+   tarjeta terracotta-dark de Inicio sin ninguna regla aparte. */
 .inline-details summary {
   cursor: pointer;
   list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 48px;
   color: var(--color-brown);
   font-weight: 600;
-  text-decoration: underline;
-  text-decoration-color: rgba(107, 79, 58, 0.4);
 }
 
 .inline-details summary::-webkit-details-marker {
   display: none;
 }
 
-.inline-details summary:hover, .inline-details summary:focus-visible {
-  text-decoration-color: var(--color-brown);
+.inline-details summary::after {
+  content: '';
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 200ms ease-in-out;
+}
+
+.inline-details[open] summary::after {
+  transform: rotate(-135deg);
 }
 
 .inline-details[open] summary {
@@ -1045,12 +1087,6 @@ a.bento-card:hover, a.bento-card:focus-visible {
    resto del texto de esa tarjeta. */
 .bento-card-hero .inline-details summary {
   color: var(--color-white);
-  text-decoration-color: rgba(255, 255, 255, 0.5);
-}
-
-.bento-card-hero .inline-details summary:hover,
-.bento-card-hero .inline-details summary:focus-visible {
-  text-decoration-color: var(--color-white);
 }
 
 .bento-card-hero .exercise-label {

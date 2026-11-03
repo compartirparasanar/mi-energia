@@ -89,6 +89,17 @@ function renderTextBlock(text) {
   return html;
 }
 
+// Quita las lineas de "rellenar a mano" (p.ej. "Tu turno: ______________"
+// o "Paso 1: ______________") del texto de un ejercicio, para mostrarlo en
+// modo solo lectura sin espacios en blanco que ya no se pueden rellenar
+// (step-14f). No toca el texto guardado en content.js, solo lo que se
+// pinta en pantalla.
+function stripBlankPrompts(text) {
+  return String(text).split('\n').filter(function (line) {
+    return !/_{3,}\s*$/.test(line);
+  }).join('\n');
+}
+
 // Resalta la pestana activa del menu inferior fijo segun la ruta actual.
 // Se llama desde app.js tras cada render; solo actualiza clases de DOM, no
 // decide ninguna ruta.
@@ -214,10 +225,10 @@ function renderHome() {
   html += '<h3>Tu evolución</h3>';
   if (entries.length >= 2) {
     html += '<canvas id="home-evolution-canvas"></canvas>';
-  } else {
-    html += '<p>Aún no hay suficientes registros para ver tu evolución.</p>';
   }
-  if (entries.length >= 3 && !hasSeenResumen()) {
+  if (entries.length < 3) {
+    html += '<p>' + escapeHtml(apunta3DiasMensaje(entries.length)) + '</p>';
+  } else if (!hasSeenResumen()) {
     html += '<p class="evolution-ready-hint">Tu resumen está listo.</p>';
   }
   html += '</a>';
@@ -332,7 +343,7 @@ function ejercicioE1Html() {
   var cfg = GUIDE_CONTENT.ejercicioE1;
   var saved = getExerciseAnswers('ex-3-1') || { quitan: [], recargan: [] };
   var misCosas = getMisCosas();
-  var html = '<h3>' + escapeHtml(cfg.titulo) + '</h3>';
+  var html = '';
   ['pantalla1', 'pantalla2'].forEach(function (key, i) {
     var group = i === 0 ? 'quitan' : 'recargan';
     var answerKey = i === 0 ? 'quitan' : 'recargan';
@@ -347,8 +358,11 @@ function ejercicioE1Html() {
     });
     html += '</div>';
     html += '<div class="mi-dia-add-row">';
+    html += '<button type="button" class="btn btn-outline ejercicio-e1-add-toggle" data-mis-cosas-group="' + group + '">+ Añadir la mía</button>';
+    html += '<div class="ejercicio-e1-add-fields" data-mis-cosas-group="' + group + '" hidden>';
     html += '<input type="text" class="exercise-input ejercicio-e1-add-input" data-mis-cosas-group="' + group + '" data-answer-key="' + answerKey + '" placeholder="Añadir la mía">';
-    html += '<button type="button" class="btn btn-secondary ejercicio-e1-add-btn" data-mis-cosas-group="' + group + '" data-answer-key="' + answerKey + '">+ Añadir la mía</button>';
+    html += '<button type="button" class="btn btn-secondary ejercicio-e1-add-btn" data-mis-cosas-group="' + group + '" data-answer-key="' + answerKey + '">Añadir</button>';
+    html += '</div>';
     html += '</div>';
   });
   html += '<p class="confirmation" id="ejercicio-e1-final"' + (saved.recargan && saved.recargan.length ? '' : ' hidden') + '>' + escapeHtml(cfg.final) + '</p>';
@@ -388,6 +402,17 @@ function wireEjercicioE1() {
     });
   });
 
+  document.querySelectorAll('.ejercicio-e1-add-toggle').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var group = btn.getAttribute('data-mis-cosas-group');
+      var fields = document.querySelector('.ejercicio-e1-add-fields[data-mis-cosas-group="' + group + '"]');
+      btn.hidden = true;
+      fields.hidden = false;
+      var input = fields.querySelector('.ejercicio-e1-add-input');
+      if (input) input.focus();
+    });
+  });
+
   document.querySelectorAll('.ejercicio-e1-add-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var group = btn.getAttribute('data-mis-cosas-group');
@@ -414,7 +439,7 @@ function wireEjercicioE1() {
 function ejercicioE2Html() {
   var cfg = GUIDE_CONTENT.ejercicioE2;
   var saved = getExerciseAnswers('ex-5-1') || { momento: '', pasos: [] };
-  var html = '<h3>' + escapeHtml(cfg.titulo) + '</h3>';
+  var html = '';
   html += '<p class="exercise-label">' + escapeHtml(cfg.intro1) + '</p>';
   html += '<div class="tag-chips" id="ejercicio-e2-momento">';
   ['Mañana', 'Tarde', 'Noche'].forEach(function (m) {
@@ -464,7 +489,7 @@ function wireEjercicioE2() {
 // respuesta: es una herramienta para usar cada vez con una situación nueva.
 function ejercicioE3Html() {
   var cfg = GUIDE_CONTENT.ejercicioE3;
-  var html = '<h3>' + escapeHtml(cfg.titulo) + '</h3>';
+  var html = '';
   cfg.preguntas.forEach(function (pregunta, i) {
     html += '<p class="paso-question">' + escapeHtml(pregunta) + '</p>';
     html += '<div class="confirm-buttons ejercicio-e3-pregunta" data-index="' + i + '">';
@@ -479,21 +504,32 @@ function ejercicioE3Html() {
       ' <button type="button" class="btn btn-secondary ejercicio-e3-copiar" data-frase="' + escapeHtml(frase) + '">Copiar frase</button></p>';
   });
   html += '</div>';
+  html += '<p id="ejercicio-e3-todo-bien" class="confirmation" hidden>' + escapeHtml(cfg.todoBienMensaje) + '</p>';
   return html;
 }
+
+// Cada pregunta "dispara" con una respuesta distinta (step-14f, antes
+// cualquier "No" disparaba por igual y la pregunta 2 quedaba al reves):
+// P1 "No" -> mejor no; P2 "Sí" (puede esperar/delegarse/simplificarse) ->
+// mejor no; P3 "No" -> mejor no.
+var EJERCICIO_E3_DISPARA_CON = [false, true, false];
 
 function wireEjercicioE3() {
   var respuestas = {};
   var resultado = document.getElementById('ejercicio-e3-resultado');
+  var todoBien = document.getElementById('ejercicio-e3-todo-bien');
 
   function responder(index, valor, siBtn, noBtn) {
     respuestas[index] = valor;
     siBtn.classList.toggle('selected', valor === true);
     noBtn.classList.toggle('selected', valor === false);
     var answeredCount = Object.keys(respuestas).length;
-    if (answeredCount < 3) { resultado.hidden = true; return; }
-    var algunNo = Object.keys(respuestas).some(function (k) { return respuestas[k] === false; });
-    resultado.hidden = !algunNo;
+    if (answeredCount < 3) { resultado.hidden = true; todoBien.hidden = true; return; }
+    var algunDispara = Object.keys(respuestas).some(function (k) {
+      return respuestas[k] === EJERCICIO_E3_DISPARA_CON[Number(k)];
+    });
+    resultado.hidden = !algunDispara;
+    todoBien.hidden = algunDispara;
   }
 
   document.querySelectorAll('.ejercicio-e3-pregunta').forEach(function (group) {
@@ -574,7 +610,7 @@ function renderChapter(id) {
   var titleParts = ch.title.split(' — ');
   var chapterTitleText = titleParts.length > 1 ? titleParts.slice(1).join(' — ') : ch.title;
 
-  var html = '<a class="chapter-back-link" href="#/guia">‹ Mi guía</a>';
+  var html = '<a class="chapter-back-link" href="#/guia">‹ Guía</a>';
   html += '<p class="eyebrow">CAPÍTULO ' + Number(id) + ' DE ' + GUIDE_CONTENT.chapters.length + '</p>';
   html += '<h1 class="chapter-title">' + escapeHtml(chapterTitleText) + '</h1>';
   var chapterChecklistIds = [];
@@ -604,12 +640,12 @@ function renderChapter(id) {
     ch.exercises.forEach(function (exercise) {
       html += '<div class="exercise-card">';
       html += '<h3>' + escapeHtml(exercise.title) + '</h3>';
-      html += renderTextBlock(exercise.instructions);
+      html += renderTextBlock(stripBlankPrompts(exercise.instructions));
       var toolMatch = Object.keys(CHAPTER_EXERCISE_TOOL_LINKS).filter(function (prefix) {
         return exercise.title.indexOf(prefix) === 0;
       })[0];
       if (toolMatch) {
-        html += '<p><a href="#/herramientas">Puedes hacerlo tocando, en Herramientas.</a></p>';
+        html += '<p><a href="#/herramientas">Hazlo en Herramientas</a></p>';
       }
       html += '</div>';
     });
@@ -665,7 +701,7 @@ function initChecklist(checklistId) {
 }
 
 function renderToolkit() {
-  var html = '<a class="chapter-back-link" href="#/guia">‹ Mi guía</a>';
+  var html = '<a class="chapter-back-link" href="#/guia">‹ Guía</a>';
   html += '<h1>Tu kit de herramientas</h1><div class="toolkit-grid">';
 
   html += '<div class="card"><h2>' + escapeHtml(GUIDE_CONTENT.toolkit.dailyChecklist.title) + '</h2>';
@@ -786,8 +822,11 @@ function miDiaGroupHtml(groupKey, chosen, misCosas, isOpen) {
   });
   html += '</div>';
   html += '<div class="mi-dia-add-row">';
+  html += '<button type="button" class="btn btn-outline mi-dia-add-toggle" data-group="' + groupKey + '">+ Añadir la mía</button>';
+  html += '<div class="mi-dia-add-fields" data-group="' + groupKey + '" hidden>';
   html += '<input type="text" class="exercise-input mi-dia-add-input" data-group="' + groupKey + '" placeholder="Añadir la mía">';
-  html += '<button type="button" class="btn btn-secondary mi-dia-add-btn" data-group="' + groupKey + '">+ Añadir la mía</button>';
+  html += '<button type="button" class="btn btn-secondary mi-dia-add-btn" data-group="' + groupKey + '">Añadir</button>';
+  html += '</div>';
   html += '</div>';
   html += '</details>';
   return html;
@@ -799,16 +838,19 @@ function miDiaGroupHtml(groupKey, chosen, misCosas, isOpen) {
 function cerrarElDiaHtml(chosen, done) {
   var cfg = GUIDE_CONTENT.miDia.cerrarElDia;
   var html = '<h2>' + escapeHtml(cfg.titulo) + '</h2>';
-  html += '<p>' + escapeHtml(cfg.pregunta) + '</p>';
-  if (chosen.length) {
-    html += '<div class="mi-dia-cerrar-list">';
-    chosen.forEach(function (item) {
-      var checked = done[item] === true ? ' checked' : '';
-      html += '<label class="checklist-check"><input type="checkbox" class="mi-dia-done-check" data-item="' +
-        escapeHtml(item) + '"' + checked + '> ' + escapeHtml(item) + '</label>';
-    });
-    html += '</div>';
+  // step-14f: sin nada elegido todavia no hay nada que cerrar, asi que ni
+  // la pregunta ni el boton aparecen hasta elegir al menos una cosa.
+  if (!chosen.length) {
+    return html;
   }
+  html += '<p>' + escapeHtml(cfg.pregunta) + '</p>';
+  html += '<div class="mi-dia-cerrar-list">';
+  chosen.forEach(function (item) {
+    var checked = done[item] === true ? ' checked' : '';
+    html += '<label class="checklist-check"><input type="checkbox" class="mi-dia-done-check" data-item="' +
+      escapeHtml(item) + '"' + checked + '> ' + escapeHtml(item) + '</label>';
+  });
+  html += '</div>';
   html += '<button type="button" class="btn" id="mi-dia-cerrar-btn">' + escapeHtml(cfg.titulo) + '</button>';
   html += '<p id="mi-dia-cerrar-msg" class="confirmation" hidden></p>';
   return html;
@@ -900,6 +942,17 @@ function wireMiDiaCerrar() {
 // Campos "+ Añadir la mía" de cada grupo: añade a mis-cosas y la elige de
 // una vez (sin pasar dos veces por lo mismo).
 function wireMiDiaAddForms() {
+  document.querySelectorAll('.mi-dia-add-toggle').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var group = btn.getAttribute('data-group');
+      var fields = document.querySelector('.mi-dia-add-fields[data-group="' + group + '"]');
+      btn.hidden = true;
+      fields.hidden = false;
+      var input = fields.querySelector('.mi-dia-add-input');
+      if (input) input.focus();
+    });
+  });
+
   document.querySelectorAll('.mi-dia-add-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var group = btn.getAttribute('data-group');
@@ -1118,13 +1171,19 @@ var LOG_LEVEL_VALUE = { alta: 3, media: 2, baja: 1 };
 // ya ordenadas por getEnergyLog() (mas reciente primero) y devuelve un
 // array de lineas de texto (sin HTML). Nunca usa lenguaje causal ("porque"),
 // solo observacional ("parece que"), y nunca compara, puntua ni premia.
+// Mensaje de "aun faltan dias" cuando hay menos de 3 registros, compartido
+// por Inicio y Evolución (step-14f: antes decian cosas distintas).
+function apunta3DiasMensaje(total) {
+  var missing = 3 - total;
+  return 'Apunta 3 días para ver tu evolución. Te falta' + (missing === 1 ? '' : 'n') + ' ' + missing + ' más.';
+}
+
 function buildEvolutionSummary(entries) {
   var total = entries.length;
   var lines = [];
 
   if (total < 3) {
-    var missing = 3 - total;
-    lines.push('Apunta 3 días para ver tu evolución. Te falta' + (missing === 1 ? '' : 'n') + ' ' + missing + ' más.');
+    lines.push(apunta3DiasMensaje(total));
     return lines;
   }
 
@@ -1518,9 +1577,9 @@ function renderPrivacy() {
 
   html += '<h2>Qué se guarda</h2>';
   html += '<p>Tus registros de energía y tus notas se guardan únicamente en este móvil, dentro del propio navegador (lo que se llama "almacenamiento local"). Nunca se copian a ningún servidor nuestro ni de terceros, ni se envían a internet en ningún momento.</p>';
-  html += '<p>Lo mismo ocurre con las respuestas que escribas en los ejercicios de la guía: se guardan solo en este móvil, junto a tus registros de energía, y se incluyen igual en la exportación, la importación y el borrado de datos.</p>';
+  html += '<p>Los ejercicios de la guía ya no se escriben dentro de los capítulos: "Mis dos listas" y "Mi ritual mínimo" se hacen tocando desde Herramientas, y se guardan solo en este móvil igual que el resto de tus datos. Si respondiste a algún ejercicio en una versión anterior de la app, esa respuesta se conserva en este móvil y sigue incluida en la exportación, la importación y el borrado de datos.</p>';
   html += '<p>Las marcas de las checklists (por ejemplo, la checklist diaria del Capítulo 7 o del Toolkit) también se guardan solo en este móvil, con el mismo tratamiento que el resto de tus datos.</p>';
-  html += '<p>Lo mismo ocurre con tus respuestas en "Pequeños pasos" (si hoy te ha pasado algo o no): se guardan solo en este móvil, y se incluyen igual en la exportación, la importación y el borrado de datos.</p>';
+  html += '<p>Lo mismo ocurre con "Pequeño paso de hoy" (si hoy te ha pasado algo o no, dentro de Mi día): se guarda solo en este móvil, y se incluye igual en la exportación, la importación y el borrado de datos.</p>';
   html += '<p>Las etiquetas opcionales que añadas a un registro (por ejemplo "Dormí mal" o "Pude descansar") se guardan junto a ese registro, solo en este móvil, con el mismo tratamiento que el resto de tus datos.</p>';
   html += '<p>Lo mismo ocurre con lo que eliges cada día en Mi día, lo que marcas al cerrar el día, las cosas que añades tú misma a las listas y el capítulo de la guía por el que vas: se guarda solo en este móvil, y se incluye igual en la exportación, la importación y el borrado de datos.</p>';
 
