@@ -3,6 +3,25 @@
 // Este archivo solo invoca las funciones de vista definidas en views.js;
 // no modifica el DOM directamente.
 
+// Prompt nativo de instalar (step-15): Chrome/Android (y algunos de
+// escritorio) disparan "beforeinstallprompt" cuando la app es instalable.
+// Se guarda aqui, en window, para que renderInstall() en views.js pueda
+// usarlo sin que este archivo toque el DOM. Nunca se dispara en
+// Safari/iOS: ahi solo existen los pasos escritos de #/instalar.
+window.deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', function (e) {
+  e.preventDefault();
+  window.deferredInstallPrompt = e;
+  if (location.hash.replace(/^#/, '') === '/instalar') {
+    renderInstall();
+  }
+});
+
+window.addEventListener('appinstalled', function () {
+  window.deferredInstallPrompt = null;
+});
+
 function router() {
   var hash = location.hash.replace(/^#/, '');
   var guiaChapterMatch = hash.match(/^\/guia\/(\d+)$/);
@@ -39,6 +58,9 @@ function router() {
         break;
       case '/instalar':
         renderInstall();
+        break;
+      case '/recordatorios':
+        renderRecordatorios();
         break;
       case '/privacidad':
         renderPrivacy();

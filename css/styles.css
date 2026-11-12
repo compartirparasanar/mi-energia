@@ -312,6 +312,45 @@ footer a {
   height: 72px;
 }
 
+/* ---------- Aviso discreto de "instala la app" (Inicio, step-15) ---------- */
+
+.install-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  background-color: var(--color-beige);
+  border-radius: var(--radius-card);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  margin: 0 0 var(--space-4);
+}
+
+.install-banner p {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+.install-banner-close {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--color-brown);
+  cursor: pointer;
+}
+
+/* ---------- Recordatorios (step-15) ---------- */
+
+.recordatorio-field {
+  margin: 0 0 var(--space-4);
+}
+
 /* ---------- Recuadros destacados y firma ---------- */
 
 .callout {

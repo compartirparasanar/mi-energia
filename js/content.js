@@ -309,7 +309,8 @@ var GUIDE_CONTENT = {
       "media": ["ligeras", "pesan", "recargan"],
       "baja": ["recargan", "pesan", "ligeras"]
     },
-    "avisoLimite": "Hoy con {n} es suficiente. Puedes cambiar una de las que elegiste.",
+    "avisoLimite": "Hoy con {n} cosas que pesan es suficiente. Puedes cambiar una de las que elegiste.",
+    "mensajeRecargan": "Todo lo que te recargue suma.",
     "cerrarElDia": {
       "titulo": "Cerrar el día",
       "pregunta": "¿Qué has hecho de lo que elegiste?",

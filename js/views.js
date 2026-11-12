@@ -6,6 +6,26 @@
 // Decisión del autor, no de la guía: un único sitio para poder cambiarla.
 var MI_DIA_LIMITS = { alta: 3, media: 2, baja: 1 };
 
+// Si el aviso discreto de "instala la app" de Inicio se cerró en esta
+// sesión (step-15): no se guarda en ningún sitio, solo evita que vuelva a
+// aparecer mientras la pestaña siga abierta. Al recargar, puede reaparecer
+// si la app sigue sin instalarse.
+var installBannerDismissed = false;
+
+// Si la app ya se usa instalada (pantalla de inicio en iPhone/Android o
+// PWA instalada en escritorio). iOS usa navigator.standalone; el resto usa
+// la media query estandar display-mode.
+function isStandaloneDisplay() {
+  return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+    window.navigator.standalone === true;
+}
+
+// Si el dispositivo es un iPhone/iPad (para decidir que instrucciones y
+// botones de instalar/recordatorios mostrar).
+function isIOSDevice() {
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -113,9 +133,9 @@ function setActiveNavTab(hash) {
   // La guia (/guia, /guia/N, /guia/toolkit, /guia/plan-21) ya no tiene
   // pestaña propia (step-14e): se abre desde una tarjeta de Inicio, asi que
   // se resalta "Inicio" mientras se navega dentro de ella. /evolucion,
-  // /registro (ruta antigua sin enlace en el menu), /mis-datos, /instalar y
-  // /privacidad tambien cuentan como "Inicio": el menu inferior solo tiene
-  // 3 elementos (Inicio / Mi día / Herramientas).
+  // /registro (ruta antigua sin enlace en el menu), /mis-datos, /instalar,
+  // /recordatorios y /privacidad tambien cuentan como "Inicio": el menu
+  // inferior solo tiene 3 elementos (Inicio / Mi día / Herramientas).
   var links = document.querySelectorAll('.bottom-nav a');
   links.forEach(function (link) {
     if (link.getAttribute('data-nav') === tab) {
@@ -167,6 +187,29 @@ function homeExtraSectionHtml(today) {
   return html;
 }
 
+// HTML del aviso discreto de "instala la app" en Inicio (step-15): solo en
+// el primer uso (sin ningun registro todavia) y solo si no esta instalada.
+// Extraido de renderHome por el limite de 150 lineas por funcion.
+function homeInstallBannerHtml() {
+  var html = '<div class="install-banner" id="home-install-banner">';
+  html += '<p><a href="#/instalar">Instala la app para no perder tus datos</a></p>';
+  html += '<button type="button" class="install-banner-close" id="home-install-banner-close" aria-label="Cerrar aviso">×</button>';
+  html += '</div>';
+  return html;
+}
+
+// Cierra el aviso de instalar (sin guardar nada: solo evita que reaparezca
+// mientras la pestaña siga abierta).
+function wireHomeInstallBanner() {
+  var closeBtn = document.getElementById('home-install-banner-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', function () {
+      installBannerDismissed = true;
+      document.getElementById('home-install-banner').hidden = true;
+    });
+  }
+}
+
 // HTML del bloque "¿Y ahora qué?" en Inicio (step-14e): la frase del autor
 // segun el nivel elegido, con el botón "Elegir mi día" hacia Mi día.
 function homeDiaSectionHtml(today) {
@@ -188,8 +231,16 @@ function renderHome() {
   // cuanto se registra (aqui, porque today ya existiria; y al momento, al
   // ocultarla a mano en el click del nivel, ver mas abajo).
   var showWelcomeBack = !today && entries.length > 0 && daysSinceDate(entries[0].date) >= 3;
+  var isInstalled = isStandaloneDisplay();
 
   var html = homeGreetingHtml(showWelcomeBack);
+
+  // Aviso discreto de "instala la app" (step-15): solo en el primer uso
+  // (todavía sin ningún registro) y solo si no está instalada. Se puede
+  // cerrar; no vuelve a aparecer en esta sesión aunque sigas sin instalar.
+  if (!isInstalled && entries.length === 0 && !installBannerDismissed) {
+    html += homeInstallBannerHtml();
+  }
 
   html += '<div class="bento-grid">';
 
@@ -246,11 +297,11 @@ function renderHome() {
 
   html += '</div>';
 
-  var isInstalled = window.matchMedia('(display-mode: standalone)').matches || !!window.navigator.standalone;
   html += '<p class="home-footer">Recibes esta app por tu suscripción a @compartir.para.sanar.' +
     (isInstalled ? '' : ' <a href="#/instalar">Cómo instalar</a>') + '</p>';
 
   document.getElementById('app-content').innerHTML = html;
+  wireHomeInstallBanner();
 
   if (entries.length >= 2) {
     var canvas = document.getElementById('home-evolution-canvas');
@@ -880,6 +931,7 @@ function renderMiDia() {
   });
   html += '</div>';
   html += '<p id="mi-dia-limit-warning" class="confirmation" hidden></p>';
+  html += '<p id="mi-dia-recargan-msg" class="confirmation" hidden></p>';
   html += '<div id="mi-dia-cerrar-wrap">' + cerrarElDiaHtml(miDiaToday.chosen, miDiaToday.done) + '</div>';
 
   html += '<details class="inline-details" id="mi-dia-paso-section">';
@@ -887,6 +939,7 @@ function renderMiDia() {
   html += '<div id="mi-dia-paso-content">' + renderPasoCardHtml(0) + '</div>';
   html += '</details>';
   html += '<p class="chapter-end-msg"><a href="#/herramientas">¿Dudas si meter algo más? Pruébalo aquí</a></p>';
+  html += '<p class="chapter-end-msg"><a href="#/recordatorios">Poner un recordatorio en el móvil</a></p>';
 
   document.getElementById('app-content').innerHTML = html;
   wireMiDiaPaso(0);
@@ -966,16 +1019,42 @@ function wireMiDiaAddForms() {
   });
 }
 
-// Toca una cosa: si ya estaba elegida, siempre se puede quitar. Si no, y ya
-// se llegó al límite del nivel, muestra el aviso suave con "Añadir
-// igualmente" en vez de añadirla directamente — nunca bloquea del todo.
+// Grupos a los que se aplica el límite 3/2/1 (step-15): solo "Pesan" y
+// "Ligeras" cuentan juntos contra el límite. "Me recargan" no tiene límite
+// ni aviso de "suficiente" — elegir algo ahí siempre suma, nunca pesa.
+var MI_DIA_GRUPOS_CON_LIMITE = ['pesan', 'ligeras'];
+
+// Cuenta cuántas de las cosas elegidas hoy pertenecen a un grupo con
+// límite (pesan o ligeras), incluyendo lo añadido a mano con "+ Añadir".
+function contarEligidasConLimite(chosen, misCosas) {
+  var itemsConLimite = [];
+  MI_DIA_GRUPOS_CON_LIMITE.forEach(function (g) {
+    var group = GUIDE_CONTENT.miDia.grupos[g];
+    itemsConLimite = itemsConLimite.concat(group.items, misCosas[g] || []);
+  });
+  return chosen.filter(function (item) {
+    return itemsConLimite.indexOf(item) !== -1;
+  }).length;
+}
+
+// Toca una cosa: si ya estaba elegida, siempre se puede quitar. Si es de
+// "Pesan" o "Ligeras" y ya se llegó al límite del nivel (solo esos dos
+// grupos cuentan), muestra el aviso suave con "Añadir igualmente" en vez de
+// añadirla directamente — nunca bloquea del todo. Si es de "Me recargan",
+// se añade siempre al toque y muestra un mensaje positivo, sin límite.
 function wireMiDiaGroups(level, limit) {
   var today = todayDateString();
   var warning = document.getElementById('mi-dia-limit-warning');
+  var recarganMsg = document.getElementById('mi-dia-recargan-msg');
 
   function hideWarning() {
     warning.hidden = true;
     warning.innerHTML = '';
+  }
+
+  function hideRecarganMsg() {
+    recarganMsg.hidden = true;
+    recarganMsg.textContent = '';
   }
 
   function selectItem(item, btn) {
@@ -984,6 +1063,7 @@ function wireMiDiaGroups(level, limit) {
     setMiDiaChosen(today, current);
     btn.classList.add('selected');
     hideWarning();
+    hideRecarganMsg();
     refreshCerrarElDia();
   }
 
@@ -1001,9 +1081,15 @@ function wireMiDiaGroups(level, limit) {
     warning.hidden = false;
   }
 
+  function showRecarganMsg() {
+    recarganMsg.textContent = GUIDE_CONTENT.miDia.mensajeRecargan;
+    recarganMsg.hidden = false;
+  }
+
   document.querySelectorAll('.mi-dia-item').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var item = btn.getAttribute('data-item');
+      var group = btn.closest('.tag-chips').getAttribute('data-group');
       if (btn.classList.contains('selected')) {
         var current = getMiDiaForDate(today).chosen.slice();
         var idx = current.indexOf(item);
@@ -1011,10 +1097,18 @@ function wireMiDiaGroups(level, limit) {
         setMiDiaChosen(today, current);
         btn.classList.remove('selected');
         hideWarning();
+        hideRecarganMsg();
         refreshCerrarElDia();
         return;
       }
-      if (getMiDiaForDate(today).chosen.length >= limit) {
+      if (group === 'recargan') {
+        selectItem(item, btn);
+        showRecarganMsg();
+        return;
+      }
+      var misCosas = getMisCosas();
+      var chosenNow = getMiDiaForDate(today).chosen;
+      if (contarEligidasConLimite(chosenNow, misCosas) >= limit) {
         showLimitWarning(item, btn);
         return;
       }
@@ -1537,9 +1631,15 @@ function renderInstall() {
   // Abre por defecto solo las instrucciones del sistema del dispositivo
   // actual (segun userAgent); el otro sistema queda plegado. Si no se
   // detecta iOS, se abre Android (por defecto, incluye escritorio).
-  var isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  var isIOS = isIOSDevice();
+  // Boton nativo de instalar (step-15): solo aparece si el navegador ha
+  // disparado "beforeinstallprompt" (Chrome/Android y algunos de
+  // escritorio; nunca en Safari/iOS). window.deferredInstallPrompt lo
+  // guarda app.js al capturar ese evento.
+  var hasNativePrompt = !isIOS && !!window.deferredInstallPrompt;
 
-  var html = '<h1>Instalar la app</h1>';
+  var html = '<p class="eyebrow">Ábrela en Safari (iPhone) o en Chrome (Android), no desde otra app.</p>';
+  html += '<h1>Instalar la app</h1>';
   html += '<div class="callout"><p>Instala la app antes de empezar a registrar, para no perder tus datos.</p></div>';
 
   html += '<details class="platform-details"' + (isIOS ? ' open' : '') + '>';
@@ -1561,6 +1661,10 @@ function renderInstall() {
   html += '<li>Toca "Instalar app" o "Añadir a pantalla de inicio".</li>';
   html += '<li>Confirma tocando "Instalar".</li>';
   html += '</ol>';
+  if (hasNativePrompt) {
+    html += '<p>O usa este botón directamente:</p>';
+    html += '<button type="button" class="btn" id="install-native-btn">Instalar</button>';
+  }
   html += '</details>';
 
   html += '<h2>¿Por qué instalar?</h2>';
@@ -1569,6 +1673,165 @@ function renderInstall() {
 
   html += '<p class="signature">@compartir.para.sanar</p>';
   document.getElementById('app-content').innerHTML = html;
+
+  var nativeBtn = document.getElementById('install-native-btn');
+  if (nativeBtn) {
+    nativeBtn.addEventListener('click', function () {
+      if (!window.deferredInstallPrompt) return;
+      window.deferredInstallPrompt.prompt();
+      window.deferredInstallPrompt.userChoice.then(function () {
+        window.deferredInstallPrompt = null;
+        renderInstall();
+      });
+    });
+  }
+}
+
+// Genera el texto de un archivo .ics con dos eventos diarios recurrentes
+// (mañana y noche), con una alarma de aviso y un enlace de vuelta a la app
+// en la descripción. Es un archivo local, generado en el propio navegador:
+// no se envía a ningún sitio. Experimental (step-15): la fiabilidad de
+// descargar y abrir un .ics varía mucho según teléfono y navegador.
+function buildRecordatoriosICS(morning, night) {
+  var today = todayDateString().replace(/-/g, '');
+  var stamp = today + 'T000000Z';
+  var appUrl = location.href.split('#')[0];
+
+  function vevent(uid, time, summary) {
+    var hhmm = time.replace(':', '') + '00';
+    return [
+      'BEGIN:VEVENT',
+      'UID:' + uid,
+      'DTSTAMP:' + stamp,
+      'DTSTART:' + today + 'T' + hhmm,
+      'RRULE:FREQ=DAILY',
+      'SUMMARY:' + summary,
+      'DESCRIPTION:' + appUrl,
+      'BEGIN:VALARM',
+      'ACTION:DISPLAY',
+      'DESCRIPTION:' + summary,
+      'TRIGGER:PT0M',
+      'END:VALARM',
+      'END:VEVENT'
+    ].join('\r\n');
+  }
+
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Mi Energia//Recordatorios//ES',
+    'CALSCALE:GREGORIAN',
+    vevent('mi-energia-manana-' + today + '@local', morning, 'Registrar mi energía y elegir mi día'),
+    vevent('mi-energia-noche-' + today + '@local', night, 'Cerrar el día'),
+    'END:VCALENDAR',
+    ''
+  ].join('\r\n');
+}
+
+// HTML de la pantalla de Recordatorios (step-15). Nada de esto se guarda:
+// las horas vuelven a 09:00/21:00 cada vez que se entra. El botón de .ics
+// solo se muestra donde puede funcionar (Android y Safari normal); dentro
+// de la app instalada en iPhone (standalone) se omite, porque WebKit
+// bloquea esa descarga en modo standalone.
+function recordatoriosHtml(morning, night, showIcsSection, isIOS, isStandalone) {
+  var html = '<h1>Recordatorios</h1>';
+  html += '<div class="callout"><p>Esto es opcional. La app no puede enviarte avisos: es la alarma de tu propio ' +
+    'teléfono la que te avisa, no la app. No hay rachas ni aviso si te lo saltas algún día.</p></div>';
+
+  html += '<div class="recordatorio-field">';
+  html += '<label class="exercise-label" for="recordatorio-manana-hora">Por la mañana: registrar mi energía y elegir mi día</label>';
+  html += '<input type="time" class="exercise-input" id="recordatorio-manana-hora" value="' + escapeHtml(morning) + '">';
+  html += '</div>';
+  html += '<div class="recordatorio-field">';
+  html += '<label class="exercise-label" for="recordatorio-noche-hora">Por la noche: cerrar el día</label>';
+  html += '<input type="time" class="exercise-input" id="recordatorio-noche-hora" value="' + escapeHtml(night) + '">';
+  html += '</div>';
+
+  html += '<h2>Pon una alarma en tu móvil</h2>';
+  html += '<p>Esta es la forma que funciona siempre, en cualquier teléfono: una alarma diaria normal, con un nombre que te recuerde qué tocaba.</p>';
+
+  html += '<details class="platform-details"' + (isIOS ? ' open' : '') + '>';
+  html += '<summary>En iPhone (con la app Reloj)</summary>';
+  html += '<ol>';
+  html += '<li>Abre la app Reloj y toca "Alarma".</li>';
+  html += '<li>Toca el botón + y pon la hora en <span class="recordatorio-manana-texto">' + escapeHtml(morning) + '</span>.</li>';
+  html += '<li>En "Repetir", elige todos los días.</li>';
+  html += '<li>En "Etiqueta", escribe "Registrar mi energía y elegir mi día" y guarda.</li>';
+  html += '<li>Repite los mismos pasos a las <span class="recordatorio-noche-texto">' + escapeHtml(night) +
+    '</span>, con la etiqueta "Cerrar el día".</li>';
+  html += '</ol>';
+  html += '</details>';
+
+  html += '<details class="platform-details"' + (isIOS ? '' : ' open') + '>';
+  html += '<summary>En Android (con la app Reloj)</summary>';
+  html += '<ol>';
+  html += '<li>Abre la app Reloj y toca el botón + para añadir una alarma.</li>';
+  html += '<li>Pon la hora en <span class="recordatorio-manana-texto">' + escapeHtml(morning) + '</span>.</li>';
+  html += '<li>Activa "Repetir" y elige todos los días.</li>';
+  html += '<li>En "Etiqueta" o "Nombre", escribe "Registrar mi energía y elegir mi día" y guarda.</li>';
+  html += '<li>Repite los mismos pasos a las <span class="recordatorio-noche-texto">' + escapeHtml(night) +
+    '</span>, con la etiqueta "Cerrar el día".</li>';
+  html += '</ol>';
+  html += '</details>';
+
+  if (showIcsSection) {
+    html += '<h2>Alternativa: archivo para el calendario (experimental)</h2>';
+    html += '<p>En Android y en Safari (sin tener la app instalada) puedes probar a descargar un archivo que añade ' +
+      'estos dos avisos a tu calendario. Es experimental: en algunos teléfonos puede que no funcione. Si no ' +
+      'funciona, usa los pasos de la alarma de arriba.</p>';
+    html += '<button type="button" class="btn btn-outline" id="recordatorio-ics-btn">Descargar recordatorio (.ics)</button>';
+  } else if (isIOS && isStandalone) {
+    html += '<p class="eyebrow">Dentro de la app instalada en iPhone no se puede descargar el archivo del calendario: usa los pasos de la alarma de arriba.</p>';
+  }
+
+  html += '<p class="signature">@compartir.para.sanar</p>';
+  return html;
+}
+
+// Conecta los selectores de hora (actualizan al instante el texto de las
+// instrucciones) y el botón de .ics (lo genera y descarga en el momento,
+// con las horas elegidas; no guarda nada).
+function wireRecordatorios() {
+  var morningInput = document.getElementById('recordatorio-manana-hora');
+  var nightInput = document.getElementById('recordatorio-noche-hora');
+  var morningTextEls = document.querySelectorAll('.recordatorio-manana-texto');
+  var nightTextEls = document.querySelectorAll('.recordatorio-noche-texto');
+
+  morningInput.addEventListener('input', function () {
+    var v = morningInput.value || '09:00';
+    morningTextEls.forEach(function (el) { el.textContent = v; });
+  });
+  nightInput.addEventListener('input', function () {
+    var v = nightInput.value || '21:00';
+    nightTextEls.forEach(function (el) { el.textContent = v; });
+  });
+
+  var icsBtn = document.getElementById('recordatorio-ics-btn');
+  if (icsBtn) {
+    icsBtn.addEventListener('click', function () {
+      var morning = morningInput.value || '09:00';
+      var night = nightInput.value || '21:00';
+      var ics = buildRecordatoriosICS(morning, night);
+      var blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'recordatorios-mi-energia.ics';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    });
+  }
+}
+
+function renderRecordatorios() {
+  var isIOS = isIOSDevice();
+  var standalone = isStandaloneDisplay();
+  var showIcsSection = !(isIOS && standalone);
+  var html = recordatoriosHtml('09:00', '21:00', showIcsSection, isIOS, standalone);
+  document.getElementById('app-content').innerHTML = html;
+  wireRecordatorios();
 }
 
 function renderPrivacy() {
