@@ -263,7 +263,7 @@ footer {
   color: var(--color-brown);
   font-family: var(--font-ui);
   font-weight: 600;
-  font-size: 0.8125rem;
+  font-size: 1rem;
   text-decoration: none;
   transition: background-color 200ms ease-in-out, border-color 200ms ease-in-out, color 200ms ease-in-out;
 }
@@ -327,7 +327,7 @@ footer a {
 
 .install-banner p {
   margin: 0;
-  font-size: 0.9375rem;
+  font-size: 1rem;
 }
 
 .install-banner-close {
@@ -615,7 +615,7 @@ footer a {
   background-color: var(--color-selection-bg);
   border: 1px solid var(--color-terracotta-dark);
   color: var(--color-dark-text);
-  font-size: 0.8125rem;
+  font-size: 1rem;
   font-weight: 600;
 }
 
@@ -919,7 +919,7 @@ a.bento-card:hover, a.bento-card:focus-visible {
   color: var(--color-brown);
   font-family: var(--font-ui);
   font-weight: 600;
-  font-size: 0.9375rem;
+  font-size: 1rem;
   text-decoration: underline;
   text-decoration-color: rgba(107, 79, 58, 0.4);
   cursor: pointer;
@@ -941,7 +941,7 @@ a.bento-card:hover, a.bento-card:focus-visible {
 
 .home-footer {
   color: var(--color-brown);
-  font-size: 0.9375rem;
+  font-size: 1rem;
   text-align: center;
   margin-top: var(--space-6);
 }
@@ -967,10 +967,8 @@ a.bento-card:hover, a.bento-card:focus-visible {
 .eyebrow {
   margin: 0 0 var(--space-2);
   font-family: var(--font-ui);
-  font-size: 0.8125rem;
+  font-size: 1rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--color-text-secondary);
 }
 
@@ -1028,7 +1026,7 @@ a.bento-card:hover, a.bento-card:focus-visible {
   color: var(--color-white);
   font-family: var(--font-ui);
   font-weight: 600;
-  font-size: 0.9375rem;
+  font-size: 1rem;
   text-decoration: underline;
   text-decoration-color: rgba(255, 255, 255, 0.6);
   cursor: pointer;
@@ -1254,7 +1252,7 @@ a.bento-card:hover, a.bento-card:focus-visible {
   border-radius: var(--radius-input);
   color: var(--color-dark-text);
   font-family: var(--font-ui);
-  font-size: 0.9375rem;
+  font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
   transition: background-color 200ms ease-in-out, border-color 200ms ease-in-out;
@@ -1269,7 +1267,7 @@ a.bento-card:hover, a.bento-card:focus-visible {
 .evolution-ready-hint {
   margin: var(--space-2) 0 0;
   color: var(--color-text-secondary);
-  font-size: 0.9375rem;
+  font-size: 1rem;
   font-weight: 600;
 }
 
@@ -1313,14 +1311,14 @@ a.bento-card:hover, a.bento-card:focus-visible {
   margin-bottom: var(--space-4);
 }
 
-#mi-dia-limit-warning {
+.mi-dia-limit-warning {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
 }
 
-#mi-dia-limit-warning .btn {
+.mi-dia-limit-warning .btn {
   width: auto;
   margin: 0;
 }

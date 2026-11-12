@@ -261,14 +261,14 @@ var GUIDE_CONTENT = {
   },
   "miDiaFrases": {
     "alta": "Hoy hay margen. Elige hasta 3 cosas y deja la última parte del día libre.",
-    "media": "Reparte lo que tienes. Elige hasta 2 cosas, con una pesada como máximo.",
+    "media": "Reparte lo que tienes. Elige hasta 2 cosas.",
     "baja": "Hoy toca mantenimiento. Elige 1 cosa. Con eso basta. 🤍"
   },
   "miDia": {
     "subtitulos": {
-      "alta": "Hasta 3 cosas para hoy",
-      "media": "Hasta 2 cosas para hoy",
-      "baja": "Solo 1 cosa para hoy"
+      "alta": "Hasta 3 cosas que pesan o son ligeras; lo que te recarga no cuenta",
+      "media": "Hasta 2 cosas que pesan o son ligeras; lo que te recarga no cuenta",
+      "baja": "Solo 1 cosa que pese o sea ligera; lo que te recarga no cuenta"
     },
     "primeraVez": "Toca las cosas que sueles tener en tu día. Puedes cambiarlas cuando quieras.",
     "grupos": {
@@ -309,7 +309,7 @@ var GUIDE_CONTENT = {
       "media": ["ligeras", "pesan", "recargan"],
       "baja": ["recargan", "pesan", "ligeras"]
     },
-    "avisoLimite": "Hoy con {n} cosas que pesan es suficiente. Puedes cambiar una de las que elegiste.",
+    "avisoLimite": "Hoy con {n} cosas es suficiente. Puedes cambiar una de las que elegiste.",
     "mensajeRecargan": "Todo lo que te recargue suma.",
     "cerrarElDia": {
       "titulo": "Cerrar el día",

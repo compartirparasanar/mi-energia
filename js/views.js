@@ -12,6 +12,11 @@ var MI_DIA_LIMITS = { alta: 3, media: 2, baja: 1 };
 // si la app sigue sin instalarse.
 var installBannerDismissed = false;
 
+// Igual que installBannerDismissed, pero para el aviso de "haz una copia
+// de tus datos" (step-16): se cierra por separado, no comparte el cierre
+// con el de instalar.
+var backupBannerDismissed = false;
+
 // Si la app ya se usa instalada (pantalla de inicio en iPhone/Android o
 // PWA instalada en escritorio). iOS usa navigator.standalone; el resto usa
 // la media query estandar display-mode.
@@ -33,6 +38,19 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;');
 }
 
+// Texto alternativo del gráfico de evolución para lectores de pantalla
+// (step-16, F): el <canvas> no tiene contenido textual propio, así que se
+// resume aquí cuántos días de cada nivel hay en los datos que recibió
+// drawEvolutionChart (chart.js solo dibuja; esta decisión de accesibilidad
+// vive en views.js, que es quien decide el DOM).
+function evolutionChartAriaLabel(entries) {
+  if (!entries || !entries.length) return 'Gráfico de evolución de energía, todavía sin datos.';
+  var counts = { alta: 0, media: 0, baja: 0 };
+  entries.forEach(function (e) { if (counts.hasOwnProperty(e.level)) counts[e.level]++; });
+  return 'Gráfico de evolución de energía de los últimos ' + entries.length + ' días registrados: ' +
+    counts.alta + ' en alta, ' + counts.media + ' en media, ' + counts.baja + ' en baja.';
+}
+
 // Frases de arranque que en el documento original son recuadros destacados.
 // Se detectan por el texto literal (ya presente en content.js) para darles
 // una caja con fondo beige, sin modificar el contenido ni su esquema.
@@ -42,10 +60,10 @@ function escapeHtml(str) {
 // igual que antes, sin eyebrow — nunca se inventa un "¿Sabías que…?" donde
 // el texto real no es un dato curioso.
 var CALLOUT_LABELS = {
-  'Objetivo del capítulo:': 'OBJETIVO DEL CAPÍTULO',
-  'Objetivo de la semana:': 'OBJETIVO DE LA SEMANA',
-  'Regla práctica:': 'REGLA PRÁCTICA',
-  'Una única regla antes de empezar:': 'REGLA PRÁCTICA'
+  'Objetivo del capítulo:': 'Objetivo del capítulo',
+  'Objetivo de la semana:': 'Objetivo de la semana',
+  'Regla práctica:': 'Regla práctica',
+  'Una única regla antes de empezar:': 'Regla práctica'
 };
 
 var CALLOUT_LINE_PREFIXES = Object.keys(CALLOUT_LABELS).concat([
@@ -181,7 +199,7 @@ function homeExtraSectionHtml(today) {
   html += '<label for="home-note" class="exercise-label">Nota (opcional)</label>';
   html += '<textarea id="home-note" class="field-textarea">' + escapeHtml(today ? today.note : '') + '</textarea>';
   html += '<button type="button" class="btn" id="home-note-save">Guardar nota</button>';
-  html += '<p id="home-note-confirm" class="confirmation confirmation-on-dark" hidden>Nota guardada.</p>';
+  html += '<p id="home-note-confirm" class="confirmation confirmation-on-dark" aria-live="polite" hidden>Nota guardada.</p>';
   html += '</div>';
   html += '</div>';
   return html;
@@ -210,12 +228,35 @@ function wireHomeInstallBanner() {
   }
 }
 
+// HTML del aviso discreto de "haz una copia de tus datos" en Inicio
+// (step-16): para quien ya lleva 3 registros o mas y todavia no ha
+// instalado la app, como recordatorio de ir a Mis datos antes de perder
+// algo. Independiente del aviso de instalar de arriba (ese es solo para
+// el primer uso, sin ningun registro).
+function homeBackupBannerHtml() {
+  var html = '<div class="install-banner" id="home-backup-banner">';
+  html += '<p><a href="#/mis-datos">Haz una copia de tus datos</a></p>';
+  html += '<button type="button" class="install-banner-close" id="home-backup-banner-close" aria-label="Cerrar aviso">×</button>';
+  html += '</div>';
+  return html;
+}
+
+function wireHomeBackupBanner() {
+  var closeBtn = document.getElementById('home-backup-banner-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', function () {
+      backupBannerDismissed = true;
+      document.getElementById('home-backup-banner').hidden = true;
+    });
+  }
+}
+
 // HTML del bloque "¿Y ahora qué?" en Inicio (step-14e): la frase del autor
 // segun el nivel elegido, con el botón "Elegir mi día" hacia Mi día.
 function homeDiaSectionHtml(today) {
   var html = '<div id="home-dia-section"' + (today ? '' : ' hidden') + '>';
   html += '<p class="eyebrow">¿Y ahora qué?</p>';
-  html += '<p id="home-dia-frase" class="confirmation confirmation-on-dark">' +
+  html += '<p id="home-dia-frase" class="confirmation confirmation-on-dark" aria-live="polite">' +
     (today ? escapeHtml(GUIDE_CONTENT.miDiaFrases[today.level]) : '') + '</p>';
   html += '<a class="btn btn-on-dark" href="#/pasos">Elegir mi día</a>';
   html += '</div>';
@@ -242,6 +283,13 @@ function renderHome() {
     html += homeInstallBannerHtml();
   }
 
+  // Aviso discreto de "haz una copia de tus datos" (step-16): para quien ya
+  // tiene 3 registros o más y sigue sin instalar la app. Independiente del
+  // aviso de arriba (ese solo sale sin ningún registro todavía).
+  if (!isInstalled && entries.length >= 3 && !backupBannerDismissed) {
+    html += homeBackupBannerHtml();
+  }
+
   html += '<div class="bento-grid">';
 
   html += '<div class="bento-card bento-card-hero">';
@@ -251,14 +299,14 @@ function renderHome() {
   ['alta', 'media', 'baja'].forEach(function (level) {
     var isSelected = !!(today && today.level === level);
     html += '<button type="button" class="level-btn' + (isSelected ? ' selected' : '') +
-      '" data-level="' + level + '">' + levelLabel(level) + '</button>';
+      '" data-level="' + level + '" aria-pressed="' + (isSelected ? 'true' : 'false') + '">' + levelLabel(level) + '</button>';
   });
   html += '</div>';
   html += '</div>';
   html += '<button type="button" class="bento-skip-link-white" id="home-skip-btn">Prefiero no registrar hoy</button>';
-  html += '<p id="home-log-confirm" class="confirmation confirmation-on-dark"' + (today ? '' : ' hidden') + '>' +
+  html += '<p id="home-log-confirm" class="confirmation confirmation-on-dark" aria-live="polite"' + (today ? '' : ' hidden') + '>' +
     (today ? 'Ya has registrado hoy. Puedes cambiarlo cuando quieras.' : 'Guardado.') + '</p>';
-  html += '<p id="home-skip-msg" class="confirmation confirmation-on-dark" hidden>Vale, hoy no es necesario. Puedes registrar cuando quieras.</p>';
+  html += '<p id="home-skip-msg" class="confirmation confirmation-on-dark" aria-live="polite" hidden>Vale, hoy no es necesario. Puedes registrar cuando quieras.</p>';
 
   // Nota opcional: nunca es un paso obligatorio entre el toque y el
   // guardado. El guardado ya ocurre al tocar un nivel (ver abajo); esta
@@ -302,10 +350,14 @@ function renderHome() {
 
   document.getElementById('app-content').innerHTML = html;
   wireHomeInstallBanner();
+  wireHomeBackupBanner();
 
   if (entries.length >= 2) {
     var canvas = document.getElementById('home-evolution-canvas');
-    drawEvolutionChart(canvas, entries.slice(0, 7).reverse());
+    var homeChartEntries = entries.slice(0, 7).reverse();
+    drawEvolutionChart(canvas, homeChartEntries);
+    canvas.setAttribute('role', 'img');
+    canvas.setAttribute('aria-label', evolutionChartAriaLabel(homeChartEntries));
   }
 
   var levelButtons = document.querySelectorAll('#home-level-buttons .level-btn');
@@ -322,8 +374,9 @@ function renderHome() {
 
   levelButtons.forEach(function (btn) {
     btn.addEventListener('click', function () {
-      levelButtons.forEach(function (b) { b.classList.remove('selected'); });
+      levelButtons.forEach(function (b) { b.classList.remove('selected'); b.setAttribute('aria-pressed', 'false'); });
       btn.classList.add('selected');
+      btn.setAttribute('aria-pressed', 'true');
       var level = btn.getAttribute('data-level');
       var existing = getTodayEntry();
       saveEntry({
@@ -393,37 +446,53 @@ function renderGuideIndex() {
 function ejercicioE1Html() {
   var cfg = GUIDE_CONTENT.ejercicioE1;
   var saved = getExerciseAnswers('ex-3-1') || { quitan: [], recargan: [] };
-  var misCosas = getMisCosas();
   var html = '';
   ['pantalla1', 'pantalla2'].forEach(function (key, i) {
     var group = i === 0 ? 'quitan' : 'recargan';
-    var answerKey = i === 0 ? 'quitan' : 'recargan';
     var pantalla = cfg[key];
-    var items = pantalla.chips.concat(misCosas[group] || []);
     html += '<p class="exercise-label">' + escapeHtml(pantalla.pregunta) + '</p>';
-    html += '<div class="tag-chips ejercicio-e1-chips" data-answer-key="' + answerKey + '" data-mis-cosas-group="' + group + '">';
-    items.forEach(function (item) {
-      var isChecked = saved[answerKey] && saved[answerKey].indexOf(item) !== -1;
-      html += '<button type="button" class="tag-chip ejercicio-e1-item' + (isChecked ? ' selected' : '') +
-        '" data-item="' + escapeHtml(item) + '">' + escapeHtml(item) + '</button>';
-    });
-    html += '</div>';
-    html += '<div class="mi-dia-add-row">';
-    html += '<button type="button" class="btn btn-outline ejercicio-e1-add-toggle" data-mis-cosas-group="' + group + '">+ Añadir la mía</button>';
-    html += '<div class="ejercicio-e1-add-fields" data-mis-cosas-group="' + group + '" hidden>';
-    html += '<input type="text" class="exercise-input ejercicio-e1-add-input" data-mis-cosas-group="' + group + '" data-answer-key="' + answerKey + '" placeholder="Añadir la mía">';
-    html += '<button type="button" class="btn btn-secondary ejercicio-e1-add-btn" data-mis-cosas-group="' + group + '" data-answer-key="' + answerKey + '">Añadir</button>';
-    html += '</div>';
+    html += '<div class="ejercicio-e1-pantalla-body" id="ejercicio-e1-body-' + group + '">';
+    html += ejercicioE1BodyHtml(group, saved, false);
     html += '</div>';
   });
-  html += '<p class="confirmation" id="ejercicio-e1-final"' + (saved.recargan && saved.recargan.length ? '' : ' hidden') + '>' + escapeHtml(cfg.final) + '</p>';
+  html += '<p class="confirmation" id="ejercicio-e1-final" aria-live="polite"' + (saved.recargan && saved.recargan.length ? '' : ' hidden') + '>' + escapeHtml(cfg.final) + '</p>';
+  return html;
+}
+
+// Chips + fila de "+ Añadir" de UNA pantalla del Ejercicio 1. Igual que
+// miDiaGroupBodyHtml (step-16, B6): se puede refrescar solo esto, sin tocar
+// el resto de ejercicioE1Html, para que no salte al añadir algo nuevo.
+// addFieldOpen: si el campo de añadir debe quedar abierto con un "Listo"
+// para cerrarlo (justo después de añadir una cosa).
+function ejercicioE1BodyHtml(group, saved, addFieldOpen) {
+  var cfg = GUIDE_CONTENT.ejercicioE1;
+  var pantalla = group === 'quitan' ? cfg.pantalla1 : cfg.pantalla2;
+  var answerKey = group;
+  var misCosas = getMisCosas();
+  var items = pantalla.chips.concat(misCosas[group] || []);
+  var html = '<div class="tag-chips ejercicio-e1-chips" data-answer-key="' + answerKey + '" data-mis-cosas-group="' + group + '">';
+  items.forEach(function (item) {
+    var isChecked = saved[answerKey] && saved[answerKey].indexOf(item) !== -1;
+    html += '<button type="button" class="tag-chip ejercicio-e1-item' + (isChecked ? ' selected' : '') +
+      '" data-item="' + escapeHtml(item) + '" aria-pressed="' + (isChecked ? 'true' : 'false') + '">' + escapeHtml(item) + '</button>';
+  });
+  html += '</div>';
+  html += '<div class="mi-dia-add-row">';
+  html += '<button type="button" class="btn btn-outline ejercicio-e1-add-toggle" data-mis-cosas-group="' + group + '"' + (addFieldOpen ? ' hidden' : '') + '>+ Añadir la mía</button>';
+  html += '<div class="ejercicio-e1-add-fields" data-mis-cosas-group="' + group + '"' + (addFieldOpen ? '' : ' hidden') + '>';
+  html += '<input type="text" class="exercise-input ejercicio-e1-add-input" data-mis-cosas-group="' + group + '" data-answer-key="' + answerKey + '" placeholder="Añadir la mía">';
+  html += '<button type="button" class="btn btn-secondary ejercicio-e1-add-btn" data-mis-cosas-group="' + group + '" data-answer-key="' + answerKey + '">Añadir</button>';
+  html += '<button type="button" class="btn btn-secondary ejercicio-e1-add-done" data-mis-cosas-group="' + group + '">Listo</button>';
+  html += '</div>';
+  html += '</div>';
   return html;
 }
 
 // Conecta los chips y "+ Añadir" del Ejercicio 1 (ver ejercicioE1Html).
 // Cada toque guarda al instante; el de la pantalla 2 ("recargan") también
 // se refleja en las cosas elegidas hoy en Mi día (decisión A del plan).
-function wireEjercicioE1() {
+function wireEjercicioE1(container) {
+  container = container || document;
   var today = todayDateString();
 
   function toggleItem(answerKey, group, item, btn) {
@@ -435,6 +504,7 @@ function wireEjercicioE1() {
     saved[answerKey] = list;
     saveExerciseAnswers('ex-3-1', saved);
     btn.classList.toggle('selected', nowSelected);
+    btn.setAttribute('aria-pressed', nowSelected ? 'true' : 'false');
     if (group === 'recargan') {
       var chosen = getMiDiaForDate(today).chosen.slice();
       var cIdx = chosen.indexOf(item);
@@ -446,14 +516,14 @@ function wireEjercicioE1() {
     if (finalMsg) finalMsg.hidden = !(saved.recargan && saved.recargan.length);
   }
 
-  document.querySelectorAll('.ejercicio-e1-item').forEach(function (btn) {
+  container.querySelectorAll('.ejercicio-e1-item').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var wrap = btn.closest('.ejercicio-e1-chips');
       toggleItem(wrap.getAttribute('data-answer-key'), wrap.getAttribute('data-mis-cosas-group'), btn.getAttribute('data-item'), btn);
     });
   });
 
-  document.querySelectorAll('.ejercicio-e1-add-toggle').forEach(function (btn) {
+  container.querySelectorAll('.ejercicio-e1-add-toggle').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var group = btn.getAttribute('data-mis-cosas-group');
       var fields = document.querySelector('.ejercicio-e1-add-fields[data-mis-cosas-group="' + group + '"]');
@@ -464,7 +534,7 @@ function wireEjercicioE1() {
     });
   });
 
-  document.querySelectorAll('.ejercicio-e1-add-btn').forEach(function (btn) {
+  container.querySelectorAll('.ejercicio-e1-add-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var group = btn.getAttribute('data-mis-cosas-group');
       var answerKey = btn.getAttribute('data-answer-key');
@@ -472,16 +542,42 @@ function wireEjercicioE1() {
       var label = input ? input.value.trim() : '';
       if (!label) return;
       addMiCosa(group, label);
-      var content = document.getElementById('ejercicio-e1-content');
-      content.innerHTML = ejercicioE1Html();
-      wireEjercicioE1();
-      var newBtn = content.querySelector('.ejercicio-e1-item[data-item="' + CSS.escape(label) + '"]');
-      if (newBtn && !newBtn.classList.contains('selected')) {
-        var wrap = newBtn.closest('.ejercicio-e1-chips');
-        toggleItem(wrap.getAttribute('data-answer-key'), group, label, newBtn);
+      var saved = getExerciseAnswers('ex-3-1') || { quitan: [], recargan: [] };
+      var list = Array.isArray(saved[answerKey]) ? saved[answerKey].slice() : [];
+      if (list.indexOf(label) === -1) list.push(label);
+      saved[answerKey] = list;
+      saveExerciseAnswers('ex-3-1', saved);
+      if (group === 'recargan') {
+        var chosen = getMiDiaForDate(today).chosen.slice();
+        if (chosen.indexOf(label) === -1) chosen.push(label);
+        setMiDiaChosen(today, chosen);
       }
+      refreshEjercicioE1Body(group, true);
     });
   });
+
+  container.querySelectorAll('.ejercicio-e1-add-done').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var group = btn.getAttribute('data-mis-cosas-group');
+      refreshEjercicioE1Body(group, false);
+    });
+  });
+}
+
+// Refresca solo los chips + fila de "+ Añadir" de una pantalla del
+// Ejercicio 1 (step-16, B6: mismo cambio mínimo que refreshMiDiaGroupBody).
+function refreshEjercicioE1Body(group, addFieldOpen) {
+  var saved = getExerciseAnswers('ex-3-1') || { quitan: [], recargan: [] };
+  var body = document.getElementById('ejercicio-e1-body-' + group);
+  if (!body) return;
+  body.innerHTML = ejercicioE1BodyHtml(group, saved, addFieldOpen);
+  wireEjercicioE1(body);
+  var finalMsg = document.getElementById('ejercicio-e1-final');
+  if (finalMsg) finalMsg.hidden = !(saved.recargan && saved.recargan.length);
+  if (addFieldOpen) {
+    var input = body.querySelector('.ejercicio-e1-add-input');
+    if (input) input.focus();
+  }
 }
 
 // HTML del Ejercicio 2 ("Mi ritual mínimo"): un momento del día y hasta 3
@@ -494,8 +590,9 @@ function ejercicioE2Html() {
   html += '<p class="exercise-label">' + escapeHtml(cfg.intro1) + '</p>';
   html += '<div class="tag-chips" id="ejercicio-e2-momento">';
   ['Mañana', 'Tarde', 'Noche'].forEach(function (m) {
-    html += '<button type="button" class="tag-chip ejercicio-e2-momento-btn' + (saved.momento === m ? ' selected' : '') +
-      '" data-momento="' + escapeHtml(m) + '">' + escapeHtml(m) + '</button>';
+    var isSelectedMomento = saved.momento === m;
+    html += '<button type="button" class="tag-chip ejercicio-e2-momento-btn' + (isSelectedMomento ? ' selected' : '') +
+      '" data-momento="' + escapeHtml(m) + '" aria-pressed="' + (isSelectedMomento ? 'true' : 'false') + '">' + escapeHtml(m) + '</button>';
   });
   html += '</div>';
   html += '<p class="exercise-label">' + escapeHtml(cfg.intro2) + '</p>';
@@ -503,10 +600,10 @@ function ejercicioE2Html() {
   cfg.opciones.forEach(function (opt) {
     var isChecked = Array.isArray(saved.pasos) && saved.pasos.indexOf(opt) !== -1;
     html += '<button type="button" class="tag-chip ejercicio-e2-paso-btn' + (isChecked ? ' selected' : '') +
-      '" data-paso="' + escapeHtml(opt) + '">' + escapeHtml(opt) + '</button>';
+      '" data-paso="' + escapeHtml(opt) + '" aria-pressed="' + (isChecked ? 'true' : 'false') + '">' + escapeHtml(opt) + '</button>';
   });
   html += '</div>';
-  html += '<p class="confirmation" id="ejercicio-e2-final"' + (saved.pasos && saved.pasos.length ? '' : ' hidden') + '>' + escapeHtml(cfg.final) + '</p>';
+  html += '<p class="confirmation" id="ejercicio-e2-final" aria-live="polite"' + (saved.pasos && saved.pasos.length ? '' : ' hidden') + '>' + escapeHtml(cfg.final) + '</p>';
   return html;
 }
 
@@ -519,8 +616,9 @@ function wireEjercicioE2() {
   document.querySelectorAll('.ejercicio-e2-momento-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var saved = getExerciseAnswers('ex-5-1') || { momento: '', pasos: [] };
-      document.querySelectorAll('.ejercicio-e2-momento-btn').forEach(function (b) { b.classList.remove('selected'); });
+      document.querySelectorAll('.ejercicio-e2-momento-btn').forEach(function (b) { b.classList.remove('selected'); b.setAttribute('aria-pressed', 'false'); });
       btn.classList.add('selected');
+      btn.setAttribute('aria-pressed', 'true');
       save(btn.getAttribute('data-momento'), saved.pasos || []);
     });
   });
@@ -530,7 +628,7 @@ function wireEjercicioE2() {
       var pasos = Array.isArray(saved.pasos) ? saved.pasos.slice() : [];
       var paso = btn.getAttribute('data-paso');
       var idx = pasos.indexOf(paso);
-      if (idx === -1) { pasos.push(paso); btn.classList.add('selected'); } else { pasos.splice(idx, 1); btn.classList.remove('selected'); }
+      if (idx === -1) { pasos.push(paso); btn.classList.add('selected'); btn.setAttribute('aria-pressed', 'true'); } else { pasos.splice(idx, 1); btn.classList.remove('selected'); btn.setAttribute('aria-pressed', 'false'); }
       save(saved.momento || '', pasos);
     });
   });
@@ -555,7 +653,7 @@ function ejercicioE3Html() {
       ' <button type="button" class="btn btn-secondary ejercicio-e3-copiar" data-frase="' + escapeHtml(frase) + '">Copiar frase</button></p>';
   });
   html += '</div>';
-  html += '<p id="ejercicio-e3-todo-bien" class="confirmation" hidden>' + escapeHtml(cfg.todoBienMensaje) + '</p>';
+  html += '<p id="ejercicio-e3-todo-bien" class="confirmation" aria-live="polite" hidden>' + escapeHtml(cfg.todoBienMensaje) + '</p>';
   return html;
 }
 
@@ -662,7 +760,7 @@ function renderChapter(id) {
   var chapterTitleText = titleParts.length > 1 ? titleParts.slice(1).join(' — ') : ch.title;
 
   var html = '<a class="chapter-back-link" href="#/guia">‹ Guía</a>';
-  html += '<p class="eyebrow">CAPÍTULO ' + Number(id) + ' DE ' + GUIDE_CONTENT.chapters.length + '</p>';
+  html += '<p class="eyebrow">Capítulo ' + Number(id) + ' de ' + GUIDE_CONTENT.chapters.length + '</p>';
   html += '<h1 class="chapter-title">' + escapeHtml(chapterTitleText) + '</h1>';
   var chapterChecklistIds = [];
   ch.sections.forEach(function (section) {
@@ -848,38 +946,54 @@ function yesterdayDateString() {
   return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
 }
 
-// Nivel que manda hoy en Mi día: el de hoy si ya se registró, si no el del
-// registro mas reciente, y si no hay ninguno, "media" (sin presionar a
-// elegir un nivel antes de poder usar Mi día).
+// Nivel que manda hoy en Mi día: el de hoy si ya se registró; si no, el
+// límite por defecto "media" (step-16: nunca el nivel de otro día — ese
+// registro puede no reflejar cómo está hoy, así que no debe fijar el
+// límite de hoy).
 function miDiaLevelForToday() {
   var today = getTodayEntry();
-  if (today) return today.level;
-  var entries = getEnergyLog();
-  return entries.length ? entries[0].level : 'media';
+  return today ? today.level : 'media';
 }
 
-// HTML de un grupo de "Mis cosas" (Pesan / Ligeras / Me recargan): chips
-// tocables mas lo añadido a mano, y el campo "+ Añadir la mía" al final.
+// HTML de un grupo de "Mis cosas" (Pesan / Ligeras / Me recargan): el
+// <details> en sí, que envuelve el contenido que puede refrescarse solo
+// (ver miDiaGroupBodyHtml) sin perder si estaba abierto o cerrado.
 function miDiaGroupHtml(groupKey, chosen, misCosas, isOpen) {
   var group = GUIDE_CONTENT.miDia.grupos[groupKey];
-  var items = group.items.concat(misCosas[groupKey] || []);
-  var html = '<details class="inline-details mi-dia-group"' + (isOpen ? ' open' : '') + '>';
+  var html = '<details class="inline-details mi-dia-group" data-group="' + groupKey + '"' + (isOpen ? ' open' : '') + '>';
   html += '<summary>' + escapeHtml(group.label) + '</summary>';
-  html += '<div class="tag-chips" data-group="' + groupKey + '">';
+  html += '<div class="mi-dia-group-body" id="mi-dia-group-body-' + groupKey + '">';
+  html += miDiaGroupBodyHtml(groupKey, chosen, misCosas, false);
+  html += '</div>';
+  html += '</details>';
+  return html;
+}
+
+// Chips tocables, el aviso de límite de ESE grupo (step-16, B1: ya no es
+// compartido entre los tres grupos) y el campo "+ Añadir la mía". Se
+// puede volver a pintar solo esto, sin tocar el <details> que lo envuelve
+// (step-16, B6), así que no se pierde si estaba abierto o cerrado.
+// addFieldOpen: si el campo de añadir debe aparecer ya abierto (justo
+// después de añadir una cosa), con un botón "Listo" para cerrarlo.
+function miDiaGroupBodyHtml(groupKey, chosen, misCosas, addFieldOpen) {
+  var group = GUIDE_CONTENT.miDia.grupos[groupKey];
+  var items = group.items.concat(misCosas[groupKey] || []);
+  var html = '<div class="tag-chips" data-group="' + groupKey + '">';
   items.forEach(function (item) {
     var isChosen = chosen.indexOf(item) !== -1;
     html += '<button type="button" class="tag-chip mi-dia-item' + (isChosen ? ' selected' : '') +
-      '" data-item="' + escapeHtml(item) + '">' + escapeHtml(item) + '</button>';
+      '" data-item="' + escapeHtml(item) + '" aria-pressed="' + (isChosen ? 'true' : 'false') + '">' + escapeHtml(item) + '</button>';
   });
   html += '</div>';
+  html += '<p class="confirmation mi-dia-limit-warning" data-group="' + groupKey + '" aria-live="polite" hidden></p>';
   html += '<div class="mi-dia-add-row">';
-  html += '<button type="button" class="btn btn-outline mi-dia-add-toggle" data-group="' + groupKey + '">+ Añadir la mía</button>';
-  html += '<div class="mi-dia-add-fields" data-group="' + groupKey + '" hidden>';
+  html += '<button type="button" class="btn btn-outline mi-dia-add-toggle" data-group="' + groupKey + '"' + (addFieldOpen ? ' hidden' : '') + '>+ Añadir la mía</button>';
+  html += '<div class="mi-dia-add-fields" data-group="' + groupKey + '"' + (addFieldOpen ? '' : ' hidden') + '>';
   html += '<input type="text" class="exercise-input mi-dia-add-input" data-group="' + groupKey + '" placeholder="Añadir la mía">';
   html += '<button type="button" class="btn btn-secondary mi-dia-add-btn" data-group="' + groupKey + '">Añadir</button>';
+  html += '<button type="button" class="btn btn-secondary mi-dia-add-done" data-group="' + groupKey + '">Listo</button>';
   html += '</div>';
   html += '</div>';
-  html += '</details>';
   return html;
 }
 
@@ -903,7 +1017,7 @@ function cerrarElDiaHtml(chosen, done) {
   });
   html += '</div>';
   html += '<button type="button" class="btn" id="mi-dia-cerrar-btn">' + escapeHtml(cfg.titulo) + '</button>';
-  html += '<p id="mi-dia-cerrar-msg" class="confirmation" hidden></p>';
+  html += '<p id="mi-dia-cerrar-msg" class="confirmation" aria-live="polite" hidden></p>';
   return html;
 }
 
@@ -930,8 +1044,7 @@ function renderMiDia() {
     html += miDiaGroupHtml(groupKey, miDiaToday.chosen, misCosas, i === 0);
   });
   html += '</div>';
-  html += '<p id="mi-dia-limit-warning" class="confirmation" hidden></p>';
-  html += '<p id="mi-dia-recargan-msg" class="confirmation" hidden></p>';
+  html += '<p id="mi-dia-recargan-msg" class="confirmation" aria-live="polite" hidden></p>';
   html += '<div id="mi-dia-cerrar-wrap">' + cerrarElDiaHtml(miDiaToday.chosen, miDiaToday.done) + '</div>';
 
   html += '<details class="inline-details" id="mi-dia-paso-section">';
@@ -949,10 +1062,51 @@ function renderMiDia() {
   var repetirBtn = document.getElementById('mi-dia-repetir-btn');
   if (repetirBtn) {
     repetirBtn.addEventListener('click', function () {
+      // step-16, B7: si ya hay algo elegido hoy, pide confirmación antes
+      // de reemplazarlo (en vez de machacarlo directamente).
+      if (miDiaToday.chosen.length) {
+        showRepetirConfirm(repetirBtn, today, yesterdayChosen);
+        return;
+      }
       setMiDiaChosen(today, yesterdayChosen.slice());
       renderMiDia();
     });
   }
+}
+
+// Confirmación en línea antes de "Repetir lo de ayer" cuando hoy ya hay
+// algo elegido (step-16, B7): mismo patrón que la confirmación de borrar
+// datos en Mis datos, para no sorprender con un reemplazo silencioso.
+function showRepetirConfirm(repetirBtn, today, yesterdayChosen) {
+  var existing = document.getElementById('mi-dia-repetir-confirm');
+  if (existing) return;
+  var box = document.createElement('div');
+  box.id = 'mi-dia-repetir-confirm';
+  box.className = 'callout';
+  var text = document.createElement('p');
+  text.textContent = 'Ya has elegido algo para hoy. ¿Quieres sustituirlo por lo de ayer?';
+  box.appendChild(text);
+  var row = document.createElement('div');
+  row.className = 'confirm-buttons';
+  var yesBtn = document.createElement('button');
+  yesBtn.type = 'button';
+  yesBtn.className = 'btn btn-danger';
+  yesBtn.textContent = 'Sí, sustituir';
+  yesBtn.addEventListener('click', function () {
+    setMiDiaChosen(today, yesterdayChosen.slice());
+    renderMiDia();
+  });
+  var noBtn = document.createElement('button');
+  noBtn.type = 'button';
+  noBtn.className = 'btn btn-secondary';
+  noBtn.textContent = 'Cancelar';
+  noBtn.addEventListener('click', function () {
+    box.remove();
+  });
+  row.appendChild(yesBtn);
+  row.appendChild(noBtn);
+  box.appendChild(row);
+  repetirBtn.insertAdjacentElement('afterend', box);
 }
 
 // Vuelve a pintar solo "Cerrar el día" (tras elegir/quitar/añadir una cosa),
@@ -992,10 +1146,15 @@ function wireMiDiaCerrar() {
   }
 }
 
-// Campos "+ Añadir la mía" de cada grupo: añade a mis-cosas y la elige de
-// una vez (sin pasar dos veces por lo mismo).
-function wireMiDiaAddForms() {
-  document.querySelectorAll('.mi-dia-add-toggle').forEach(function (btn) {
+// Campos "+ Añadir la mía" de cada grupo: añade a mis-cosas sin perder el
+// estado abierto/cerrado del <details> (step-16, B6: solo se refresca el
+// contenido de ese grupo, ver refreshMiDiaGroupBody). container acota la
+// búsqueda de botones a un solo grupo cuando se vuelve a llamar tras un
+// refresco; por defecto (primer pintado) es todo el documento.
+function wireMiDiaAddForms(container) {
+  container = container || document;
+
+  container.querySelectorAll('.mi-dia-add-toggle').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var group = btn.getAttribute('data-group');
       var fields = document.querySelector('.mi-dia-add-fields[data-group="' + group + '"]');
@@ -1006,17 +1165,43 @@ function wireMiDiaAddForms() {
     });
   });
 
-  document.querySelectorAll('.mi-dia-add-btn').forEach(function (btn) {
+  container.querySelectorAll('.mi-dia-add-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var group = btn.getAttribute('data-group');
       var input = document.querySelector('.mi-dia-add-input[data-group="' + group + '"]');
       var label = input ? input.value.trim() : '';
       if (!label) return;
       addMiCosa(group, label);
-      input.value = '';
-      renderMiDia();
+      refreshMiDiaGroupBody(group, true);
     });
   });
+
+  container.querySelectorAll('.mi-dia-add-done').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var group = btn.getAttribute('data-group');
+      refreshMiDiaGroupBody(group, false);
+    });
+  });
+}
+
+// Vuelve a pintar solo los chips, el aviso de límite y la fila de
+// "+ Añadir la mía" de UN grupo (step-16, B6): no toca el <details> que lo
+// envuelve, así que conserva si estaba abierto o cerrado. addFieldOpen: si
+// el campo de añadir debe quedar abierto (justo tras añadir una cosa, con
+// un botón "Listo" para cerrarlo después).
+function refreshMiDiaGroupBody(groupKey, addFieldOpen) {
+  var level = miDiaLevelForToday();
+  var miDiaToday = getMiDiaForDate(todayDateString());
+  var misCosas = getMisCosas();
+  var body = document.getElementById('mi-dia-group-body-' + groupKey);
+  if (!body) return;
+  body.innerHTML = miDiaGroupBodyHtml(groupKey, miDiaToday.chosen, misCosas, addFieldOpen);
+  wireMiDiaGroups(level, MI_DIA_LIMITS[level], body);
+  wireMiDiaAddForms(body);
+  if (addFieldOpen) {
+    var input = body.querySelector('.mi-dia-add-input');
+    if (input) input.focus();
+  }
 }
 
 // Grupos a los que se aplica el límite 3/2/1 (step-15): solo "Pesan" y
@@ -1042,12 +1227,23 @@ function contarEligidasConLimite(chosen, misCosas) {
 // grupos cuentan), muestra el aviso suave con "Añadir igualmente" en vez de
 // añadirla directamente — nunca bloquea del todo. Si es de "Me recargan",
 // se añade siempre al toque y muestra un mensaje positivo, sin límite.
-function wireMiDiaGroups(level, limit) {
+// container acota la búsqueda de chips a un solo grupo cuando se vuelve a
+// llamar tras refrescar ese grupo (step-16, B6); por defecto (primer
+// pintado) es todo el documento.
+function wireMiDiaGroups(level, limit, container) {
+  container = container || document;
   var today = todayDateString();
-  var warning = document.getElementById('mi-dia-limit-warning');
   var recarganMsg = document.getElementById('mi-dia-recargan-msg');
 
-  function hideWarning() {
+  // step-16, B1: el aviso de límite ya no es un único elemento compartido,
+  // es el de ESE grupo (dentro de su propio <details>).
+  function warningForBtn(btn) {
+    var groupEl = btn.closest('.mi-dia-group');
+    return groupEl ? groupEl.querySelector('.mi-dia-limit-warning') : null;
+  }
+
+  function hideWarning(warning) {
+    if (!warning) return;
     warning.hidden = true;
     warning.innerHTML = '';
   }
@@ -1057,28 +1253,37 @@ function wireMiDiaGroups(level, limit) {
     recarganMsg.textContent = '';
   }
 
-  function selectItem(item, btn) {
+  function selectItem(item, btn, warning) {
     var current = getMiDiaForDate(today).chosen.slice();
     if (current.indexOf(item) === -1) current.push(item);
     setMiDiaChosen(today, current);
     btn.classList.add('selected');
-    hideWarning();
+    btn.setAttribute('aria-pressed', 'true');
+    hideWarning(warning);
     hideRecarganMsg();
     refreshCerrarElDia();
   }
 
-  function showLimitWarning(item, btn) {
-    hideWarning();
+  function showLimitWarning(item, btn, warning) {
+    if (!warning) return;
+    hideWarning(warning);
     var text = document.createElement('span');
     text.textContent = GUIDE_CONTENT.miDia.avisoLimite.replace('{n}', String(limit)) + ' ';
     var addAnyway = document.createElement('button');
     addAnyway.type = 'button';
     addAnyway.className = 'btn btn-secondary';
     addAnyway.textContent = 'Añadir igualmente';
-    addAnyway.addEventListener('click', function () { selectItem(item, btn); });
+    addAnyway.addEventListener('click', function () { selectItem(item, btn, warning); });
     warning.appendChild(text);
     warning.appendChild(addAnyway);
     warning.hidden = false;
+    // Si el aviso no queda totalmente visible dentro del grupo abierto, un
+    // scroll suave hasta él (step-16, B1).
+    var rect = warning.getBoundingClientRect();
+    var fullyVisible = rect.top >= 0 && rect.bottom <= window.innerHeight;
+    if (!fullyVisible) {
+      warning.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
   }
 
   function showRecarganMsg() {
@@ -1086,33 +1291,35 @@ function wireMiDiaGroups(level, limit) {
     recarganMsg.hidden = false;
   }
 
-  document.querySelectorAll('.mi-dia-item').forEach(function (btn) {
+  container.querySelectorAll('.mi-dia-item').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var item = btn.getAttribute('data-item');
       var group = btn.closest('.tag-chips').getAttribute('data-group');
+      var warning = warningForBtn(btn);
       if (btn.classList.contains('selected')) {
         var current = getMiDiaForDate(today).chosen.slice();
         var idx = current.indexOf(item);
         if (idx !== -1) current.splice(idx, 1);
         setMiDiaChosen(today, current);
         btn.classList.remove('selected');
-        hideWarning();
+        btn.setAttribute('aria-pressed', 'false');
+        hideWarning(warning);
         hideRecarganMsg();
         refreshCerrarElDia();
         return;
       }
       if (group === 'recargan') {
-        selectItem(item, btn);
+        selectItem(item, btn, warning);
         showRecarganMsg();
         return;
       }
       var misCosas = getMisCosas();
       var chosenNow = getMiDiaForDate(today).chosen;
       if (contarEligidasConLimite(chosenNow, misCosas) >= limit) {
-        showLimitWarning(item, btn);
+        showLimitWarning(item, btn, warning);
         return;
       }
-      selectItem(item, btn);
+      selectItem(item, btn, warning);
     });
   });
 }
@@ -1189,7 +1396,7 @@ function renderLog() {
   ['alta', 'media', 'baja'].forEach(function (level) {
     var isSelected = level === selectedLevel;
     html += '<button type="button" class="level-btn' + (isSelected ? ' selected' : '') +
-      '" data-level="' + level + '">' + levelLabel(level) + '</button>';
+      '" data-level="' + level + '" aria-pressed="' + (isSelected ? 'true' : 'false') + '">' + levelLabel(level) + '</button>';
   });
   html += '</div>';
   html += '<input type="hidden" id="log-level" value="' + escapeHtml(selectedLevel) + '">';
@@ -1197,8 +1404,8 @@ function renderLog() {
   html += '<textarea id="log-note" class="field-textarea">' + escapeHtml(selectedNote) + '</textarea>';
   html += '<button type="submit" id="log-save">Guardar</button>';
   html += '<button type="button" class="bento-skip-link" id="log-skip-btn">Prefiero no registrar hoy</button>';
-  html += '<div id="log-confirmation" class="callout" hidden><p class="confirmation">Guardado en tu móvil. Puedes editarlo cuando quieras.</p></div>';
-  html += '<p id="log-skip-msg" class="confirmation" hidden>Vale, hoy no es necesario. Puedes registrar cuando quieras.</p>';
+  html += '<div id="log-confirmation" class="callout" aria-live="polite" hidden><p class="confirmation">Guardado en tu móvil. Puedes editarlo cuando quieras.</p></div>';
+  html += '<p id="log-skip-msg" class="confirmation" aria-live="polite" hidden>Vale, hoy no es necesario. Puedes registrar cuando quieras.</p>';
   html += '</form>';
   html += '</div>';
 
@@ -1226,8 +1433,9 @@ function renderLog() {
   var buttons = document.querySelectorAll('.level-btn');
   buttons.forEach(function (btn) {
     btn.addEventListener('click', function () {
-      buttons.forEach(function (b) { b.classList.remove('selected'); });
+      buttons.forEach(function (b) { b.classList.remove('selected'); b.setAttribute('aria-pressed', 'false'); });
       btn.classList.add('selected');
+      btn.setAttribute('aria-pressed', 'true');
       levelInput.value = btn.getAttribute('data-level');
     });
   });
@@ -1346,16 +1554,22 @@ function buildEvolutionSummary(entries) {
 // que el resto de views.js: se vuelve a llamar a esta función con la fecha
 // abierta, o con null para cerrarla.
 function renderEvolution(editingDate) {
-  // Se marca como "visto" en cuanto se abre esta vista, sin importar
-  // cuantos registros haya: por eso "Tu resumen está listo" en Inicio no
-  // vuelve a aparecer nunca mas.
-  markResumenSeen();
-
-  var html = '<p class="eyebrow">Últimos 14 días</p><h1>Evolución</h1>';
   var allEntries = getEnergyLog();
 
+  // Se marca como "visto" al abrir esta vista, pero solo a partir de 3
+  // registros (step-16, E1): es el mismo umbral en el que Inicio deja de
+  // mostrar "Tu resumen está listo" (ver homeDiaSectionHtml/arriba). Si se
+  // marcara antes, ese aviso en Inicio nunca llegaria a aparecer.
+  if (allEntries.length >= 3) {
+    markResumenSeen();
+  }
+
+  var html = '<p class="eyebrow">Últimos 14 días</p><h1>Evolución</h1>';
+
   if (allEntries.length < 2) {
-    html += '<p>Necesitas al menos 2 registros para ver tu evolución.</p>';
+    // Mismo mensaje que Inicio para 0 o 1 registros (step-16, E2): antes
+    // decia algo distinto aqui ("Necesitas al menos 2 registros...").
+    html += '<p>' + escapeHtml(apunta3DiasMensaje(allEntries.length)) + '</p>';
     document.getElementById('app-content').innerHTML = html;
     return;
   }
@@ -1405,7 +1619,7 @@ function renderEvolution(editingDate) {
       ['alta', 'media', 'baja'].forEach(function (level) {
         var isSelected = level === entry.level;
         html += '<button type="button" class="level-btn' + (isSelected ? ' selected' : '') +
-          '" data-level="' + level + '">' + levelLabel(level) + '</button>';
+          '" data-level="' + level + '" aria-pressed="' + (isSelected ? 'true' : 'false') + '">' + levelLabel(level) + '</button>';
       });
       html += '</div>';
       html += '<p class="exercise-label">Etiquetas (opcional)</p>';
@@ -1413,7 +1627,7 @@ function renderEvolution(editingDate) {
       LOG_TAGS.forEach(function (tag) {
         var isChecked = Array.isArray(entry.tags) && entry.tags.indexOf(tag) !== -1;
         html += '<button type="button" class="tag-chip' + (isChecked ? ' selected' : '') +
-          '" data-tag="' + escapeHtml(tag) + '">' + escapeHtml(tag) + '</button>';
+          '" data-tag="' + escapeHtml(tag) + '" aria-pressed="' + (isChecked ? 'true' : 'false') + '">' + escapeHtml(tag) + '</button>';
       });
       html += '</div>';
       html += '<label for="evolution-edit-note" class="exercise-label">Nota (opcional)</label>';
@@ -1432,6 +1646,8 @@ function renderEvolution(editingDate) {
 
   var canvas = document.getElementById('evolution-canvas');
   drawEvolutionChart(canvas, chartEntries);
+  canvas.setAttribute('role', 'img');
+  canvas.setAttribute('aria-label', evolutionChartAriaLabel(chartEntries));
 
   var entryButtons = document.querySelectorAll('.evolution-entry-btn');
   entryButtons.forEach(function (btn) {
@@ -1446,8 +1662,9 @@ function renderEvolution(editingDate) {
     var editButtons = editLevels ? editLevels.querySelectorAll('.level-btn') : [];
     editButtons.forEach(function (b) {
       b.addEventListener('click', function () {
-        editButtons.forEach(function (x) { x.classList.remove('selected'); });
+        editButtons.forEach(function (x) { x.classList.remove('selected'); x.setAttribute('aria-pressed', 'false'); });
         b.classList.add('selected');
+        b.setAttribute('aria-pressed', 'true');
       });
     });
 
@@ -1455,7 +1672,9 @@ function renderEvolution(editingDate) {
     var editTagButtons = editTagsContainer ? editTagsContainer.querySelectorAll('.tag-chip') : [];
     editTagButtons.forEach(function (b) {
       b.addEventListener('click', function () {
+        var nowSelected = !b.classList.contains('selected');
         b.classList.toggle('selected');
+        b.setAttribute('aria-pressed', nowSelected ? 'true' : 'false');
       });
     });
 
@@ -1497,6 +1716,9 @@ function renderMyData() {
   html += '<h2>Exportar</h2>';
   html += '<div class="callout"><p>Descarga un archivo con todos tus registros, por si cambias de móvil o borras la app por error.</p></div>';
   html += '<button type="button" id="export-btn" class="btn">Exportar mis datos</button>';
+  html += '<div id="export-share-fallback" hidden></div>';
+  html += '<p id="export-confirm" class="confirmation" aria-live="polite" hidden></p>';
+  html += '<p id="export-error" class="confirmation" aria-live="polite" hidden></p>';
   html += '</div>';
 
   html += '<div class="card">';
@@ -1504,9 +1726,9 @@ function renderMyData() {
   html += '<div class="callout"><p>Si ya tienes un archivo de copia de seguridad (.json), puedes importarlo aquí. Esto sustituirá los registros que tengas ahora mismo en este móvil.</p></div>';
   html += '<label for="import-file" class="btn btn-secondary">Elegir archivo para importar</label>';
   html += '<input type="file" id="import-file" class="visually-hidden" accept="application/json,.json">';
-  html += '<div id="import-error" class="callout" hidden></div>';
-  html += '<div id="import-confirm" class="callout" hidden></div>';
-  html += '<p id="import-success" class="confirmation" hidden>Importación completada.</p>';
+  html += '<div id="import-error" class="callout" aria-live="polite" hidden></div>';
+  html += '<div id="import-confirm" class="callout" aria-live="polite" hidden></div>';
+  html += '<p id="import-success" class="confirmation" aria-live="polite" hidden>Importación completada.</p>';
   html += '</div>';
 
   html += '<div class="card">';
@@ -1519,7 +1741,7 @@ function renderMyData() {
   html += '<button type="button" id="delete-confirm-btn" class="btn btn-danger">Sí, borrar todo</button>';
   html += '<button type="button" id="delete-cancel-btn" class="btn btn-secondary">Cancelar</button>';
   html += '</div></div>';
-  html += '<p id="delete-success" class="confirmation" hidden>Tus datos se han borrado.</p>';
+  html += '<p id="delete-success" class="confirmation" aria-live="polite" hidden>Tus datos se han borrado.</p>';
   html += '</div>';
 
   html += '</div>';
@@ -1527,16 +1749,82 @@ function renderMyData() {
   document.getElementById('app-content').innerHTML = html;
 
   document.getElementById('export-btn').addEventListener('click', function () {
-    var json = exportDataJSON();
-    var blob = new Blob([json], { type: 'application/json' });
-    var url = URL.createObjectURL(blob);
-    var link = document.createElement('a');
-    link.href = url;
-    link.download = 'mi-energia-' + todayDateString() + '.json';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    var exportConfirm = document.getElementById('export-confirm');
+    var exportError = document.getElementById('export-error');
+    var shareFallback = document.getElementById('export-share-fallback');
+    exportConfirm.hidden = true;
+    exportError.hidden = true;
+    shareFallback.hidden = true;
+    shareFallback.innerHTML = '';
+
+    var filename = 'mi-energia-' + todayDateString() + '.json';
+    var json;
+    try {
+      json = exportDataJSON();
+    } catch (e) {
+      exportError.textContent = 'No se ha podido preparar la exportación. Inténtalo de nuevo.';
+      exportError.hidden = false;
+      return;
+    }
+
+    // Muestra el JSON en un campo de solo lectura para copiar a mano:
+    // alternativa cuando no se puede descargar ni compartir el archivo.
+    function showCopyFallback() {
+      var label = document.createElement('p');
+      label.className = 'exercise-label';
+      label.textContent = 'No se puede descargar el archivo aquí dentro. Copia este texto y guárdalo donde quieras:';
+      var textarea = document.createElement('textarea');
+      textarea.className = 'field-textarea';
+      textarea.setAttribute('readonly', 'readonly');
+      textarea.value = json;
+      shareFallback.appendChild(label);
+      shareFallback.appendChild(textarea);
+      shareFallback.hidden = false;
+      textarea.focus();
+      textarea.select();
+    }
+
+    // Dentro de la app instalada en iPhone (standalone), WebKit bloquea la
+    // descarga de un blob con <a download> (el mismo bug ya documentado
+    // para el .ics de Recordatorios, WebKit 236943). Ahí se intenta
+    // compartir el archivo con navigator.share, y si no está disponible,
+    // se muestra el JSON para copiar a mano. Importante: esto no se ha
+    // podido probar en un iPhone real — no hay forma de confirmar aquí si
+    // el share entrega el archivo correctamente en ese contexto exacto.
+    if (isIOSDevice() && isStandaloneDisplay()) {
+      var blobForShare = new Blob([json], { type: 'application/json' });
+      var file = (typeof File !== 'undefined') ? new File([blobForShare], filename, { type: 'application/json' }) : null;
+      if (file && window.navigator.canShare && window.navigator.canShare({ files: [file] }) && navigator.share) {
+        navigator.share({ files: [file], title: filename }).then(function () {
+          exportConfirm.textContent = 'Archivo compartido: ' + filename + '.';
+          exportConfirm.hidden = false;
+        }).catch(function () {
+          // Puede ser que el usuario cancelara el share, no necesariamente
+          // un fallo: se ofrece igualmente la alternativa de copiar.
+          showCopyFallback();
+        });
+        return;
+      }
+      showCopyFallback();
+      return;
+    }
+
+    try {
+      var blob = new Blob([json], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      exportConfirm.textContent = 'Descargado: ' + filename + '.';
+      exportConfirm.hidden = false;
+    } catch (e) {
+      exportError.textContent = 'No se ha podido descargar el archivo. Inténtalo de nuevo.';
+      exportError.hidden = false;
+    }
   });
 
   var fileInput = document.getElementById('import-file');
@@ -1755,10 +2043,11 @@ function recordatoriosHtml(morning, night, showIcsSection, isIOS, isStandalone) 
   html += '<ol>';
   html += '<li>Abre la app Reloj y toca "Alarma".</li>';
   html += '<li>Toca el botón + y pon la hora en <span class="recordatorio-manana-texto">' + escapeHtml(morning) + '</span>.</li>';
-  html += '<li>En "Repetir", elige todos los días.</li>';
+  html += '<li>En "Repetir", marca los siete días (o toca "Todos los días" si tu iPhone lo muestra así).</li>';
   html += '<li>En "Etiqueta", escribe "Registrar mi energía y elegir mi día" y guarda.</li>';
   html += '<li>Repite los mismos pasos a las <span class="recordatorio-noche-texto">' + escapeHtml(night) +
     '</span>, con la etiqueta "Cerrar el día".</li>';
+  html += '<li>Si tu móvil no muestra exactamente esto, busca lo que más se parezca: lo importante es que se repita cada día y tenga ese nombre.</li>';
   html += '</ol>';
   html += '</details>';
 
@@ -1767,10 +2056,11 @@ function recordatoriosHtml(morning, night, showIcsSection, isIOS, isStandalone) 
   html += '<ol>';
   html += '<li>Abre la app Reloj y toca el botón + para añadir una alarma.</li>';
   html += '<li>Pon la hora en <span class="recordatorio-manana-texto">' + escapeHtml(morning) + '</span>.</li>';
-  html += '<li>Activa "Repetir" y elige todos los días.</li>';
-  html += '<li>En "Etiqueta" o "Nombre", escribe "Registrar mi energía y elegir mi día" y guarda.</li>';
+  html += '<li>Marca todos los días para que se repita (en algunos móviles hay una casilla "Repetir").</li>';
+  html += '<li>En «Etiqueta» o «Nombre de alarma», escribe "Registrar mi energía y elegir mi día". Si tu móvil tiene botón Guardar, púlsalo.</li>';
   html += '<li>Repite los mismos pasos a las <span class="recordatorio-noche-texto">' + escapeHtml(night) +
     '</span>, con la etiqueta "Cerrar el día".</li>';
+  html += '<li>Si tu móvil no muestra exactamente esto, busca lo que más se parezca: lo importante es que se repita cada día y tenga ese nombre.</li>';
   html += '</ol>';
   html += '</details>';
 
