@@ -2016,15 +2016,227 @@ function buildRecordatoriosICS(morning, night) {
   ].join('\r\n');
 }
 
-// HTML de la pantalla de Recordatorios (step-15). Nada de esto se guarda:
-// las horas vuelven a 09:00/21:00 cada vez que se entra. El botón de .ics
-// solo se muestra donde puede funcionar (Android y Safari normal); dentro
-// de la app instalada en iPhone (standalone) se omite, porque WebKit
-// bloquea esa descarga en modo standalone.
-function recordatoriosHtml(morning, night, showIcsSection, isIOS, isStandalone) {
+// Paso 17c: ya existe la conexión real con OneSignal, con el App ID real
+// de la app "Mi Energía" (Web Push) que Ana creó en su dashboard. Sigue
+// siendo 100% opt-in -- nada de esto corre hasta que la persona pulsa
+// "Activar aviso". Ese botón carga el SDK, pide permiso y suscribe de
+// verdad; "Desactivar" llama a optOut(). El App ID no es secreto -- va
+// siempre en el código del cliente de cualquier app que use OneSignal.
+var ONESIGNAL_APP_ID = '475231f5-c34f-4639-942f-e172c1966994';
+var AVISO_ONESIGNAL_CONECTADO = true;
+
+// Service worker dedicado de OneSignal (paso 17b): vive fuera del alcance
+// del service worker principal de la app (./service-worker.js, que
+// controla /mi-energia/ entero) para no chocar con su cache-first. La
+// ruta coincide con push/onesignal/OneSignalSDKWorker.js en este mismo
+// repo -- ver ese archivo, que solo reexporta el worker oficial de
+// OneSignal, nada propio.
+var ONESIGNAL_SW_PATH = 'push/onesignal/OneSignalSDKWorker.js';
+var ONESIGNAL_SW_SCOPE = '/mi-energia/push/onesignal/';
+
+// Inserta el <script> del SDK de OneSignal SOLO la primera vez que se
+// llama a esta función -- es la única función de todo el proyecto que
+// añade un <script src> externo, y solo se llama desde dentro del
+// handler de "Activar aviso"/"Desactivar aviso" (nunca al cargar la app).
+// Si el SDK ya está cargado en esta sesión, no vuelve a insertar nada.
+function cargarOneSignalSDK() {
+  return new Promise(function (resolve, reject) {
+    if (window.OneSignal) {
+      resolve();
+      return;
+    }
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    var script = document.createElement('script');
+    script.src = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js';
+    script.defer = true;
+    script.onload = function () { resolve(); };
+    script.onerror = function () { reject(new Error('No se pudo cargar el SDK de OneSignal.')); };
+    document.head.appendChild(script);
+  });
+}
+
+// Carga (si falta) e inicializa OneSignal, y devuelve una promesa que se
+// resuelve con el objeto OneSignal ya listo para pedir permiso / etiquetar
+// / darse de baja. El service worker dedicado (ver arriba) solo se
+// registra en este momento, no antes.
+function inicializarOneSignal() {
+  return cargarOneSignalSDK().then(function () {
+    return new Promise(function (resolve) {
+      window.OneSignalDeferred.push(function (OneSignal) {
+        OneSignal.init({
+          appId: ONESIGNAL_APP_ID,
+          serviceWorkerPath: ONESIGNAL_SW_PATH,
+          serviceWorkerParam: { scope: ONESIGNAL_SW_SCOPE }
+        }).then(function () {
+          resolve(OneSignal);
+        });
+      });
+    });
+  });
+}
+
+// HTML de la sección "Aviso diario (opcional)" de Recordatorios (paso 17).
+// Va arriba de las alarmas manuales porque es la opción recomendada; las
+// alarmas manuales siguen debajo como alternativa para quien no la active.
+function avisoDiarioHtml(prefs) {
+  var franjas = [
+    { id: 'manana', label: 'Mañana (9:00)' },
+    { id: 'tarde', label: 'Tarde (18:00)' },
+    { id: 'noche', label: 'Noche (21:00)' }
+  ];
+
+  var html = '<h2>Aviso diario (opcional)</h2>';
+  html += '<p>Si quieres, la app puede avisarte una vez al día para que no se te olvide registrar tu energía. ' +
+    'Es opcional y puedes desactivarlo cuando quieras.</p>';
+
+  html += '<div class="callout"><p><strong>Qué sale de tu móvil si lo activas:</strong> solo lo mínimo que ' +
+    'necesita el servicio que envía el aviso (sistema operativo, idioma, zona horaria, país aproximado, modelo ' +
+    'de tu dispositivo y la franja que elijas abajo). <strong>Nunca se envían tus registros de energía, tus ' +
+    'notas ni nada de lo que guardas en esta app.</strong> Puedes leer el detalle completo en ' +
+    '<a href="#/privacidad">Privacidad</a>.</p></div>';
+
+  html += '<fieldset class="aviso-franjas-fieldset">';
+  html += '<legend class="exercise-label">¿Cuándo quieres el aviso?</legend>';
+  html += '<ul class="aviso-franjas">';
+  franjas.forEach(function (f) {
+    var checked = prefs.franja === f.id ? ' checked' : '';
+    html += '<li class="aviso-franja-row">';
+    html += '<input type="radio" id="aviso-franja-' + f.id + '" name="aviso-franja" value="' + f.id + '"' + checked + '>';
+    html += '<label for="aviso-franja-' + f.id + '">' + escapeHtml(f.label) + '</label>';
+    html += '</li>';
+  });
+  html += '</ul>';
+  html += '</fieldset>';
+
+  if (prefs.activo) {
+    html += '<p class="aviso-estado">Aviso activado para la franja elegida.</p>';
+    html += '<button type="button" class="btn btn-secondary" id="aviso-desactivar-btn">Desactivar aviso</button>';
+  } else {
+    html += '<button type="button" class="btn" id="aviso-activar-btn">Activar aviso</button>';
+  }
+
+  if (!AVISO_ONESIGNAL_CONECTADO) {
+    html += '<p class="eyebrow">Esta función todavía se está terminando: de momento guarda tu preferencia, pero los avisos todavía no se envían.</p>';
+  }
+
+  return html;
+}
+
+// Conecta los controles del "Aviso diario" (paso 17a): franja elegida y
+// botón activar/desactivar. Todo lo que hace es leer/guardar la preferencia
+// local vía storage.js y volver a pintar la pantalla -- no toca la red.
+function wireAvisoDiario() {
+  var activarBtn = document.getElementById('aviso-activar-btn');
+  var desactivarBtn = document.getElementById('aviso-desactivar-btn');
+
+  function franjaElegida() {
+    var checked = document.querySelector('input[name="aviso-franja"]:checked');
+    return checked ? checked.value : 'manana';
+  }
+
+  document.querySelectorAll('input[name="aviso-franja"]').forEach(function (radio) {
+    radio.addEventListener('change', function () {
+      var prefs = getRecordatorioPrefs();
+      saveRecordatorioPrefs(franjaElegida(), prefs.activo);
+    });
+  });
+
+  if (activarBtn) {
+    activarBtn.addEventListener('click', function () {
+      var franja = franjaElegida();
+      if (!AVISO_ONESIGNAL_CONECTADO) {
+        saveRecordatorioPrefs(franja, true);
+        renderRecordatorios();
+        return;
+      }
+      // El SDK se carga aquí, dentro del toque de la persona -- nunca
+      // antes. Deshabilitamos el botón mientras se pide permiso para
+      // evitar toques repetidos mientras el navegador muestra su diálogo.
+      activarBtn.disabled = true;
+      activarBtn.textContent = 'Activando…';
+      inicializarOneSignal().then(function (OneSignal) {
+        // En iPhone, Safari sin instalar (sin "Añadir a pantalla de
+        // inicio") no soporta notificaciones push -- lo comprobamos antes
+        // de pedir permiso para poder mostrar un mensaje claro en vez de
+        // uno genérico de error.
+        if (!OneSignal.Notifications.isPushSupported()) {
+          throw new Error('no-soportado');
+        }
+        return OneSignal.Notifications.requestPermission().then(function () {
+          if (!OneSignal.Notifications.permission) {
+            throw new Error('permiso-denegado');
+          }
+          OneSignal.User.addTag('franja', franja);
+          saveRecordatorioPrefs(franja, true);
+          renderRecordatorios();
+        }).catch(function (innerErr) {
+          if (innerErr && innerErr.message === 'permiso-denegado') {
+            throw innerErr;
+          }
+          // Algunos navegadores no soportados (ej. Safari de iPhone sin
+          // instalar) no fallan en isPushSupported() sino aquí mismo, con
+          // un error que menciona "support" en el mensaje.
+          var texto = (innerErr && innerErr.message) ? String(innerErr.message).toLowerCase() : '';
+          if (texto.indexOf('support') !== -1) {
+            throw new Error('no-soportado');
+          }
+          throw innerErr;
+        });
+      }).catch(function (err) {
+        activarBtn.disabled = false;
+        activarBtn.textContent = 'Activar aviso';
+        if (err && err.message === 'no-soportado') {
+          alert('Para activar el aviso en iPhone, primero añade la app a tu pantalla de inicio (Compartir → Añadir a pantalla de inicio) y ábrela desde su icono.');
+        } else if (err && err.message === 'permiso-denegado') {
+          alert('No se activó el aviso porque no se concedió el permiso de notificaciones. Puedes intentarlo de nuevo, o revisar el permiso de notificaciones de esta app en los ajustes de tu navegador o de tu móvil. En iPhone: Ajustes → Notificaciones → Mi Energía.');
+        } else {
+          alert('No se pudo activar el aviso. Comprueba tu conexión e inténtalo de nuevo.');
+        }
+      });
+    });
+  }
+  if (desactivarBtn) {
+    desactivarBtn.addEventListener('click', function () {
+      var franja = franjaElegida();
+      if (!AVISO_ONESIGNAL_CONECTADO) {
+        saveRecordatorioPrefs(franja, false);
+        renderRecordatorios();
+        return;
+      }
+      desactivarBtn.disabled = true;
+      inicializarOneSignal().then(function (OneSignal) {
+        return OneSignal.User.PushSubscription.optOut();
+      }).catch(function () {
+        // Si optOut() falla (por ejemplo sin conexión), seguimos
+        // guardando la preferencia local como desactivada: lo importante
+        // es que la persona deje de ver el aviso como "activo" en esta
+        // app. Si vuelve a pulsar Desactivar más adelante con conexión,
+        // se reintenta el optOut() remoto.
+      }).then(function () {
+        saveRecordatorioPrefs(franja, false);
+        renderRecordatorios();
+      });
+    });
+  }
+}
+
+// HTML de la pantalla de Recordatorios (step-15, ampliada en paso 17a).
+// Las horas de las alarmas manuales no se guardan: vuelven a 09:00/21:00
+// cada vez que se entra (sigue la decisión original de no guardar horas de
+// alarma manual; la única excepción es la franja del aviso diario de
+// arriba, documentada en storage.js). El botón de .ics solo se muestra
+// donde puede funcionar (Android y Safari normal); dentro de la app
+// instalada en iPhone (standalone) se omite, porque WebKit bloquea esa
+// descarga en modo standalone.
+function recordatoriosHtml(morning, night, showIcsSection, isIOS, isStandalone, prefs) {
   var html = '<h1>Recordatorios</h1>';
-  html += '<div class="callout"><p>Esto es opcional. La app no puede enviarte avisos: es la alarma de tu propio ' +
-    'teléfono la que te avisa, no la app. No hay rachas ni aviso si te lo saltas algún día.</p></div>';
+
+  html += avisoDiarioHtml(prefs);
+
+  html += '<div class="callout"><p>Los relojes de aquí abajo no crean ninguna alarma por sí solos: solo ' +
+    'rellenan el texto de los pasos para que no tengas que escribir la hora a mano. La alarma de verdad se ' +
+    'crea en la app Reloj de tu móvil, siguiendo esos pasos. No hay rachas ni aviso de la app si te lo saltas ' +
+    'algún día.</p></div>';
 
   html += '<div class="recordatorio-field">';
   html += '<label class="exercise-label" for="recordatorio-manana-hora">Por la mañana: registrar mi energía y elegir mi día</label>';
@@ -2119,17 +2331,24 @@ function renderRecordatorios() {
   var isIOS = isIOSDevice();
   var standalone = isStandaloneDisplay();
   var showIcsSection = !(isIOS && standalone);
-  var html = recordatoriosHtml('09:00', '21:00', showIcsSection, isIOS, standalone);
+  var prefs = getRecordatorioPrefs();
+  var html = recordatoriosHtml('09:00', '21:00', showIcsSection, isIOS, standalone, prefs);
   document.getElementById('app-content').innerHTML = html;
   wireRecordatorios();
+  wireAvisoDiario();
 }
 
 function renderPrivacy() {
   var html = '<h1>Privacidad</h1>';
-  html += '<div class="callout"><p>Todo se guarda solo en tu móvil, no lo vemos nosotros.</p></div>';
+  html += '<div class="callout"><p>Todo se guarda solo en tu móvil. No sale nada de ahí, salvo que tú decidas ' +
+    'activar el aviso diario opcional de <a href="#/recordatorios">Recordatorios</a>: en ese caso, el servicio ' +
+    'que lo envía recibe los datos mínimos que necesita (lo explicamos más abajo).</p></div>';
 
   html += '<h2>Qué se guarda</h2>';
-  html += '<p>Tus registros de energía y tus notas se guardan únicamente en este móvil, dentro del propio navegador (lo que se llama "almacenamiento local"). Nunca se copian a ningún servidor nuestro ni de terceros, ni se envían a internet en ningún momento.</p>';
+  html += '<p>Tus registros de energía y tus notas se guardan únicamente en este móvil, dentro del propio ' +
+    'navegador (lo que se llama "almacenamiento local"). Nunca se copian a ningún servidor nuestro ni de ' +
+    'terceros, y nunca se envían a internet -- ni siquiera si activas el aviso diario opcional, que solo manda ' +
+    'lo que se explica en la sección "Aviso diario y OneSignal" más abajo.</p>';
   html += '<p>Los ejercicios de la guía ya no se escriben dentro de los capítulos: "Mis dos listas" y "Mi ritual mínimo" se hacen tocando desde Herramientas, y se guardan solo en este móvil igual que el resto de tus datos. Si respondiste a algún ejercicio en una versión anterior de la app, esa respuesta se conserva en este móvil y sigue incluida en la exportación, la importación y el borrado de datos.</p>';
   html += '<p>Las marcas de las checklists (por ejemplo, la checklist diaria del Capítulo 7 o del Toolkit) también se guardan solo en este móvil, con el mismo tratamiento que el resto de tus datos.</p>';
   html += '<p>Lo mismo ocurre con "Pequeño paso de hoy" (si hoy te ha pasado algo o no, dentro de Mi día): se guarda solo en este móvil, y se incluye igual en la exportación, la importación y el borrado de datos.</p>';
@@ -2137,9 +2356,34 @@ function renderPrivacy() {
   html += '<p>Lo mismo ocurre con lo que eliges cada día en Mi día, lo que marcas al cerrar el día, las cosas que añades tú misma a las listas y el capítulo de la guía por el que vas: se guarda solo en este móvil, y se incluye igual en la exportación, la importación y el borrado de datos.</p>';
 
   html += '<h2>Qué no recogemos</h2>';
-  html += '<p>No te pedimos nombre, correo ni ubicación para usar la app. No usamos herramientas de analítica ni medimos cómo usas la app. No hay ningún servicio externo conectado: la app funciona sin conexión a internet y no manda nada a ningún sitio.</p>';
+  html += '<p>No te pedimos nombre, correo ni ubicación para usar la app. No usamos herramientas de analítica ' +
+    'ni medimos cómo usas la app. No hay ningún servicio externo conectado por defecto: la app funciona sin ' +
+    'conexión a internet y no manda nada a ningún sitio -- salvo la única excepción del aviso diario opcional, ' +
+    'que solo actúa si tú lo activas (ver la sección siguiente).</p>';
 
-  html += '<h2>El único enlace externo: la lista de correo</h2>';
+  html += '<!-- BORRADOR paso 17: pendiente de revisión de Ana y su asesor antes de publicar -->';
+  html += '<h2>Aviso diario (opcional) y el servicio que lo envía</h2>';
+  html += '<p><em>Esta sección es un borrador pendiente de revisión; todavía no es definitiva. Además, en el ' +
+    'momento de escribir esto el aviso diario todavía no envía nada: la conexión real llega en una actualización ' +
+    'posterior.</em></p>';
+  html += '<p>Si activas el aviso diario en <a href="#/recordatorios">Recordatorios</a>, un servicio externo ' +
+    'especializado en avisos (OneSignal) se encarga de enviártelo a la franja que elijas. Es opcional: si no lo ' +
+    'activas, esta sección no te afecta y no se envía nada.</p>';
+  html += '<p><strong>Qué recibe ese servicio:</strong> el sistema operativo y modelo de tu dispositivo, el ' +
+    'idioma, la zona horaria, el país aproximado (a partir de tu conexión), el estado del permiso de ' +
+    'notificaciones, un identificador técnico para poder enviarte el aviso, y la franja horaria que elijas ' +
+    '(mañana, tarde o noche). <strong>Nunca</strong> tus registros de energía, tus notas, ni nada de lo demás ' +
+    'que guarda esta app.</p>';
+  html += '<p><strong>Para qué se usa:</strong> solo para mandarte el aviso diario que tú elegiste. No se usa ' +
+    'para publicidad ni se vende a nadie.</p>';
+  html += '<p><strong>Base legal:</strong> tu consentimiento explícito, al pulsar "Activar aviso". Puedes ' +
+    'retirarlo cuando quieras pulsando "Desactivar aviso" en esa misma pantalla.</p>';
+  html += '<p><strong>Dónde se procesan estos datos:</strong> OneSignal es una empresa con sede en EEUU. Para ' +
+    'datos de personas en la Unión Europea, declara ampararse en cláusulas contractuales tipo de la UE y en el ' +
+    'marco de privacidad de datos UE-EEUU. <em>(Pendiente de confirmar con OneSignal si esto aplica igual en el ' +
+    'plan gratuito antes de publicar este texto como definitivo.)</em></p>';
+
+  html += '<h2>El único enlace externo activo: la lista de correo</h2>';
   html += '<p>Si decides apuntarte al boletín de @compartir.para.sanar, lo harás a través de un formulario de MailerLite que abre fuera de esta app, en una página web aparte. Ese correo lo gestiona Ana directamente — esta app no tiene acceso a esa lista ni a tu dirección de correo.</p>';
 
   html += '<h2>Cómo borrar tus datos de este móvil</h2>';

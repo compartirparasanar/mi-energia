@@ -75,8 +75,9 @@
 }
 
 /* step-14f: casillas nativas (checklists, Cerrar el día) con el color
-   terracota de la app en vez del azul por defecto del sistema. */
-input[type="checkbox"] {
+   terracota de la app en vez del azul por defecto del sistema. Paso 17a
+   añade los radios de la franja del Aviso diario al mismo tratamiento. */
+input[type="checkbox"], input[type="radio"] {
   accent-color: var(--color-terracotta-dark);
 }
 
@@ -786,6 +787,54 @@ footer a {
   width: 24px;
   height: 24px;
   flex-shrink: 0;
+}
+
+/* ---------- Aviso diario opcional (paso 17) ---------- */
+
+.aviso-franjas-fieldset {
+  border: none;
+  padding: 0;
+  margin: var(--space-4) 0;
+}
+
+.aviso-franjas-fieldset legend {
+  padding: 0;
+  margin-bottom: var(--space-2);
+}
+
+.aviso-franjas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.aviso-franja-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 48px;
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  font-size: 1rem;
+  color: var(--color-dark-text);
+}
+
+.aviso-franja-row input[type="radio"] {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.aviso-estado {
+  font-weight: 600;
+  color: var(--color-dark-text);
+  margin-bottom: var(--space-3);
 }
 
 .visually-hidden {

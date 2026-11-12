@@ -1,7 +1,11 @@
 // js/storage.js
 // Unico archivo que lee/escribe localStorage. Guarda el registro diario de
 // energia bajo la clave "mi-energia-log". Todo permanece en el dispositivo:
-// nada de esto se envia a ningun servidor.
+// nada de esto se envia a ningun servidor -- la unica excepcion es la
+// preferencia del "Aviso diario" opcional (ver RECORDATORIO_PREFS_KEY mas
+// abajo), que paso 17b podra enviar en parte a un servicio externo SOLO si
+// la persona activa ese aviso. Ese envio nunca sale de aqui: lo hace el
+// codigo de views.js, no este archivo.
 
 var ENERGY_LOG_KEY = 'mi-energia-log';
 var EXERCISES_KEY = 'mi-energia-ejercicios';
@@ -35,6 +39,14 @@ var MI_DIA_KEY = 'mi-energia-mi-dia';
 // con la guía" / "Empezar la guía" de Inicio. Un solo número, no un dato de
 // uso: no cuenta cuántas veces se ha leído, solo el más reciente.
 var ULTIMO_CAPITULO_KEY = 'mi-energia-ultimo-capitulo';
+// Preferencia del "Aviso diario" opcional (paso 17): franja elegida
+// (manana|tarde|noche) y si la persona lo activo. EXCEPCION DOCUMENTADA a
+// la decision anterior de no guardar horas de recordatorios -- aqui no se
+// guarda una hora exacta, solo una franja, y unicamente para esta funcion
+// opcional de aviso push. No es un dato de energia: no se incluye en la
+// exportacion/importacion de la copia de seguridad (ver CLAUDE.md, paso 17).
+var RECORDATORIO_PREFS_KEY = 'mi-energia-recordatorio';
+var RECORDATORIO_FRANJAS = ['manana', 'tarde', 'noche'];
 
 function todayDateString() {
   var now = new Date();
@@ -239,6 +251,30 @@ function setUltimoCapitulo(n) {
   if (Number.isInteger(n) && n >= 1 && n <= 9) {
     localStorage.setItem(ULTIMO_CAPITULO_KEY, String(n));
   }
+}
+
+// Preferencia del "Aviso diario" opcional (paso 17). activo siempre
+// empieza en false: paso 17a no conecta con ningun servicio, asi que esto
+// solo guarda lo que la persona eligio en la pantalla de Recordatorios.
+function getRecordatorioPrefs() {
+  var raw = localStorage.getItem(RECORDATORIO_PREFS_KEY);
+  if (!raw) {
+    return { franja: 'manana', activo: false };
+  }
+  try {
+    var parsed = JSON.parse(raw);
+    var franja = (parsed && RECORDATORIO_FRANJAS.indexOf(parsed.franja) !== -1) ? parsed.franja : 'manana';
+    return { franja: franja, activo: !!(parsed && parsed.activo) };
+  } catch (e) {
+    return { franja: 'manana', activo: false };
+  }
+}
+
+function saveRecordatorioPrefs(franja, activo) {
+  if (RECORDATORIO_FRANJAS.indexOf(franja) === -1) {
+    franja = 'manana';
+  }
+  localStorage.setItem(RECORDATORIO_PREFS_KEY, JSON.stringify({ franja: franja, activo: !!activo }));
 }
 
 // Comprueba recursivamente que un valor de respuesta de ejercicio es solo
