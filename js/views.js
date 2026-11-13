@@ -2157,9 +2157,22 @@ function avisoDiarioHtml(prefs) {
   return html;
 }
 
+// Repinta solo la zona del "Aviso diario" (estado, botón, mensaje de
+// franja) con las preferencias actuales, sin tocar el resto de la
+// pantalla de Recordatorios -- en particular, sin tocar los selectores de
+// hora de la alarma manual (paso 17g: antes, un renderRecordatorios()
+// completo los hacía perder cualquier cambio sin guardar).
+function actualizarAvisoZona() {
+  var zona = document.getElementById('aviso-diario-zona');
+  if (!zona) { return; }
+  zona.innerHTML = avisoDiarioHtml(getRecordatorioPrefs());
+  wireAvisoDiario();
+}
+
 // Conecta los controles del "Aviso diario" (paso 17a): franja elegida y
 // botón activar/desactivar. Todo lo que hace es leer/guardar la preferencia
-// local vía storage.js y volver a pintar la pantalla -- no toca la red.
+// local vía storage.js y actualizar su propia zona de la pantalla -- no
+// toca la red salvo al activar/desactivar de verdad.
 function wireAvisoDiario() {
   var activarBtn = document.getElementById('aviso-activar-btn');
   var desactivarBtn = document.getElementById('aviso-desactivar-btn');
@@ -2203,7 +2216,7 @@ function wireAvisoDiario() {
       var franja = franjaElegida();
       if (!AVISO_ONESIGNAL_CONECTADO) {
         saveRecordatorioPrefs(franja, true);
-        renderRecordatorios();
+        actualizarAvisoZona();
         return;
       }
       // El SDK se carga aquí, dentro del toque de la persona -- nunca
@@ -2229,7 +2242,7 @@ function wireAvisoDiario() {
           }
           OneSignal.User.addTag('franja', franja);
           saveRecordatorioPrefs(franja, true);
-          renderRecordatorios();
+          actualizarAvisoZona();
         }).catch(function (innerErr) {
           if (innerErr && innerErr.message === 'permiso-denegado') {
             throw innerErr;
@@ -2263,7 +2276,7 @@ function wireAvisoDiario() {
       var franja = franjaElegida();
       if (!AVISO_ONESIGNAL_CONECTADO) {
         saveRecordatorioPrefs(franja, false);
-        renderRecordatorios();
+        actualizarAvisoZona();
         return;
       }
       desactivarBtn.disabled = true;
@@ -2277,7 +2290,7 @@ function wireAvisoDiario() {
         // se reintenta el optOut() remoto.
       }).then(function () {
         saveRecordatorioPrefs(franja, false);
-        renderRecordatorios();
+        actualizarAvisoZona();
       });
     });
   }
@@ -2319,20 +2332,22 @@ function horaSelectsHtml(idPrefix, hora, ariaHoraLabel, ariaMinutoLabel) {
   return html;
 }
 
-// HTML de la pantalla de Recordatorios (step-15, ampliada en paso 17a y
-// 17e). Las horas de las alarmas manuales no se guardan: vuelven a
-// 09:00/21:00 cada vez que se entra (sigue la decisión original de no
-// guardar horas de alarma manual; la única excepción es la franja del
-// aviso diario de arriba, documentada en storage.js). Por eso tampoco se
-// copia aquí la hora del aviso diario -- son dos cosas distintas y no hay
-// que mezclarlas sin que la persona lo pida claramente. El botón de .ics
-// solo se muestra donde puede funcionar (Android y Safari normal); dentro
-// de la app instalada en iPhone (standalone) se omite, porque WebKit
-// bloquea esa descarga en modo standalone.
+// HTML de la pantalla de Recordatorios (step-15, ampliada en paso 17a,
+// 17e y 17g). Las horas de las alarmas manuales ahora se recuerdan (paso
+// 17g, ver getAlarmaManualHoras() en storage.js) -- "morning"/"night"
+// llegan ya leídas de ahí, no hardcodeadas. Sigue sin copiarse aquí la
+// hora del aviso diario -- son dos cosas distintas y no hay que
+// mezclarlas sin que la persona lo pida claramente. El botón de .ics solo
+// se muestra donde puede funcionar (Android y Safari normal); dentro de
+// la app instalada en iPhone (standalone) se omite, porque WebKit bloquea
+// esa descarga en modo standalone.
 function recordatoriosHtml(morning, night, showIcsSection, isIOS, isStandalone, prefs) {
   var html = '<h1>Recordatorios</h1>';
 
-  html += avisoDiarioHtml(prefs);
+  // Paso 17g: esta zona se repinta sola (ver actualizarAvisoZona()) al
+  // activar/desactivar el aviso, para no tocar los selectores de hora de
+  // la alarma manual de más abajo.
+  html += '<div id="aviso-diario-zona">' + avisoDiarioHtml(prefs) + '</div>';
 
   html += '<div class="callout"><p>Los relojes de aquí abajo no crean ninguna alarma por sí solos: solo ' +
     'rellenan el texto de los pasos para que no tengas que escribir la hora a mano. La alarma de verdad se ' +
@@ -2404,10 +2419,12 @@ function recordatoriosHtml(morning, night, showIcsSection, isIOS, isStandalone, 
   return html;
 }
 
-// Conecta los selectores de hora (paso 17e: ahora son dos <select> -- hora
-// y minutos -- en vez de un input type="time"). Actualizan al instante el
-// texto de las instrucciones, y el botón de .ics los usa para generar el
-// archivo en el momento; no se guarda nada de esto.
+// Conecta los selectores de hora (paso 17e: dos <select> -- hora y
+// minutos -- en vez de un input type="time"). Actualizan al instante el
+// texto de las instrucciones, guardan la elección (paso 17g, ver
+// saveAlarmaManualHoras() en storage.js) para que no se pierda al
+// repintar la pantalla, y el botón de .ics los usa para generar el
+// archivo en el momento.
 function wireRecordatorios() {
   var mananaH = document.getElementById('recordatorio-manana-hora-h');
   var mananaM = document.getElementById('recordatorio-manana-hora-m');
@@ -2427,12 +2444,14 @@ function wireRecordatorios() {
     sel.addEventListener('change', function () {
       var v = morningValue();
       morningTextEls.forEach(function (el) { el.textContent = v; });
+      saveAlarmaManualHoras(morningValue(), nightValue());
     });
   });
   [nocheH, nocheM].forEach(function (sel) {
     sel.addEventListener('change', function () {
       var v = nightValue();
       nightTextEls.forEach(function (el) { el.textContent = v; });
+      saveAlarmaManualHoras(morningValue(), nightValue());
     });
   });
 
@@ -2460,7 +2479,8 @@ function renderRecordatorios() {
   var standalone = isStandaloneDisplay();
   var showIcsSection = !(isIOS && standalone);
   var prefs = getRecordatorioPrefs();
-  var html = recordatoriosHtml('09:00', '21:00', showIcsSection, isIOS, standalone, prefs);
+  var horas = getAlarmaManualHoras();
+  var html = recordatoriosHtml(horas.morning, horas.night, showIcsSection, isIOS, standalone, prefs);
   document.getElementById('app-content').innerHTML = html;
   wireRecordatorios();
   wireAvisoDiario();
@@ -2482,6 +2502,7 @@ function renderPrivacy() {
   html += '<p>Lo mismo ocurre con "Pequeño paso de hoy" (si hoy te ha pasado algo o no, dentro de Mi día): se guarda solo en este móvil, y se incluye igual en la exportación, la importación y el borrado de datos.</p>';
   html += '<p>Las etiquetas opcionales que añadas a un registro (por ejemplo "Dormí mal" o "Pude descansar") se guardan junto a ese registro, solo en este móvil, con el mismo tratamiento que el resto de tus datos.</p>';
   html += '<p>Lo mismo ocurre con lo que eliges cada día en Mi día, lo que marcas al cerrar el día, las cosas que añades tú misma a las listas y el capítulo de la guía por el que vas: se guarda solo en este móvil, y se incluye igual en la exportación, la importación y el borrado de datos.</p>';
+  html += '<p>Tus preferencias de <a href="#/recordatorios">Recordatorios</a> -- si activaste el aviso diario, la franja que elegiste, y las horas que pusiste en los selectores de la alarma manual de tu Reloj -- también se guardan solo en este móvil, para que no tengas que volver a elegirlas cada vez. Al ser preferencias de la interfaz y no datos de energía, no se incluyen en la exportación ni la importación de la copia de seguridad.</p>';
 
   html += '<h2>Qué no recogemos</h2>';
   html += '<p>No te pedimos nombre, correo ni ubicación para usar la app. No usamos herramientas de analítica ' +

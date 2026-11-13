@@ -47,6 +47,17 @@ var ULTIMO_CAPITULO_KEY = 'mi-energia-ultimo-capitulo';
 // exportacion/importacion de la copia de seguridad (ver CLAUDE.md, paso 17).
 var RECORDATORIO_PREFS_KEY = 'mi-energia-recordatorio';
 var RECORDATORIO_FRANJAS = ['manana', 'tarde', 'noche'];
+// Horas de la alarma manual de "Pon una alarma en tu móvil" (paso 17g).
+// Antes volvian siempre a 09:00/21:00 en cada repintado de la pantalla,
+// perdiendo lo que la persona hubiera cambiado. Igual que
+// RECORDATORIO_PREFS_KEY, es una EXCEPCION DOCUMENTADA a la decision
+// original de no guardar horas de recordatorios: aqui no hay fecha ni
+// nada identificable, solo hora y minutos de una alarma manual que la
+// persona pone ella misma en la app Reloj de su movil -- nunca se envia a
+// ningun sitio, y no se incluye en la exportacion/importacion de la copia
+// de seguridad (ver CLAUDE.md, paso 17), por ser una preferencia de la
+// interfaz y no un dato de energia.
+var ALARMA_MANUAL_KEY = 'mi-energia-alarma-manual';
 
 function todayDateString() {
   var now = new Date();
@@ -275,6 +286,35 @@ function saveRecordatorioPrefs(franja, activo) {
     franja = 'manana';
   }
   localStorage.setItem(RECORDATORIO_PREFS_KEY, JSON.stringify({ franja: franja, activo: !!activo }));
+}
+
+// Valida "HH:MM" con minutos en uno de los 4 valores redondos que usan los
+// selects de la alarma manual (paso 17g).
+function isValidHoraRedonda(hora) {
+  return typeof hora === 'string' && /^([01]\d|2[0-3]):(00|15|30|45)$/.test(hora);
+}
+
+// Horas de la alarma manual (paso 17g). Si no hay nada guardado todavia,
+// devuelve los mismos valores por defecto de siempre (09:00/21:00).
+function getAlarmaManualHoras() {
+  var raw = localStorage.getItem(ALARMA_MANUAL_KEY);
+  if (!raw) {
+    return { morning: '09:00', night: '21:00' };
+  }
+  try {
+    var parsed = JSON.parse(raw);
+    var morning = isValidHoraRedonda(parsed && parsed.morning) ? parsed.morning : '09:00';
+    var night = isValidHoraRedonda(parsed && parsed.night) ? parsed.night : '21:00';
+    return { morning: morning, night: night };
+  } catch (e) {
+    return { morning: '09:00', night: '21:00' };
+  }
+}
+
+function saveAlarmaManualHoras(morning, night) {
+  if (!isValidHoraRedonda(morning)) { morning = '09:00'; }
+  if (!isValidHoraRedonda(night)) { night = '21:00'; }
+  localStorage.setItem(ALARMA_MANUAL_KEY, JSON.stringify({ morning: morning, night: night }));
 }
 
 // Comprueba recursivamente que un valor de respuesta de ejercicio es solo
