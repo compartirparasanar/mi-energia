@@ -1984,6 +1984,28 @@ function renderMyData() {
   });
 }
 
+// Paso 18: desplegable cerrado por defecto con las 5 capturas de un
+// sistema (iPhone o Android), en orden, dentro de las instrucciones
+// escritas de #/instalar. Las imágenes viven en img/instalar/ y NO están
+// en PRECACHE_URLS del service worker -- se descargan y se cachean solo
+// si la persona abre este desplegable (ver service-worker.js, estrategia
+// cache-first normal para lo que no está precacheado).
+function instalarCapturasHtml(prefix, altos) {
+  var html = '<details class="inline-details instalar-capturas-details">';
+  html += '<summary>Ver con imágenes</summary>';
+  html += '<div class="instalar-capturas">';
+  altos.forEach(function (alt, i) {
+    var paso = i + 1;
+    html += '<figure class="instalar-captura">';
+    html += '<img src="img/instalar/' + prefix + '-' + paso + '.jpg" alt="' + escapeHtml(alt) + '" loading="lazy">';
+    html += '<figcaption>Paso ' + paso + '</figcaption>';
+    html += '</figure>';
+  });
+  html += '</div>';
+  html += '</details>';
+  return html;
+}
+
 function renderInstall() {
   // Abre por defecto solo las instrucciones del sistema del dispositivo
   // actual (segun userAgent); el otro sistema queda plegado. Si no se
@@ -2008,6 +2030,13 @@ function renderInstall() {
   html += '<li>Toca "Añadir" arriba a la derecha.</li>';
   html += '<li>A partir de ahora, abre siempre la app desde el icono nuevo de tu pantalla de inicio, no desde Safari.</li>';
   html += '</ol>';
+  html += instalarCapturasHtml('iphone', [
+    'Pantalla de la app abierta en Safari, con el icono Compartir señalado en la barra de abajo.',
+    'Menú Compartir de Safari desplegado, con la opción "Compartir" arriba.',
+    'Menú de Safari con la opción "Añadir a pantalla de inicio" rodeada.',
+    'Cuadro "Añadir a pantalla de inicio" con el nombre de la app y el botón "Añadir" señalado.',
+    'Icono de Mi Energía ya instalado en la pantalla de inicio del iPhone.'
+  ]);
   html += '</details>';
 
   html += '<details class="platform-details"' + (isIOS ? '' : ' open') + '>';
@@ -2022,6 +2051,13 @@ function renderInstall() {
     html += '<p>O usa este botón directamente:</p>';
     html += '<button type="button" class="btn" id="install-native-btn">Instalar</button>';
   }
+  html += instalarCapturasHtml('android', [
+    'Pantalla de la app abierta en Chrome, con el menú de tres puntos señalado arriba a la derecha.',
+    'Menú de Chrome desplegado, con la opción "Instalar y crear acceso directo" rodeada.',
+    'Cuadro "Instalar y crear acceso directo" con la opción "Instalar" señalada.',
+    'Cuadro de confirmación "Instalar aplicación" con el botón "Instalar" señalado.',
+    'Icono de Mi Energía ya instalado en la pantalla de inicio del móvil Android.'
+  ]);
   html += '</details>';
 
   html += '<h2>¿Por qué instalar?</h2>';
