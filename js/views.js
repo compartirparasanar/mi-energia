@@ -2075,6 +2075,35 @@ function inicializarOneSignal() {
   });
 }
 
+// Paso 17f: pone un tiempo máximo a una promesa de red (carga del SDK,
+// init, requestPermission...). Si no se resuelve ni rechaza en ese tiempo,
+// esta promesa se rechaza con 'tiempo-agotado' -- así, si el navegador o
+// la red se quedan colgados, la persona ve un mensaje tranquilo y el
+// botón vuelve a su estado normal, en vez de quedarse bloqueado para
+// siempre. Si la promesa original acaba resolviéndose más tarde, ya no
+// hace nada (se ignora: la pantalla ya se repintó con el mensaje de
+// tiempo agotado).
+function conTiempoLimite(promesa, ms) {
+  return new Promise(function (resolve, reject) {
+    var vencido = false;
+    var temporizador = setTimeout(function () {
+      vencido = true;
+      reject(new Error('tiempo-agotado'));
+    }, ms);
+    promesa.then(function (valor) {
+      if (!vencido) {
+        clearTimeout(temporizador);
+        resolve(valor);
+      }
+    }, function (err) {
+      if (!vencido) {
+        clearTimeout(temporizador);
+        reject(err);
+      }
+    });
+  });
+}
+
 // HTML de la sección "Aviso diario (opcional)" de Recordatorios (paso 17).
 // Va arriba de las alarmas manuales porque es la opción recomendada; las
 // alarmas manuales siguen debajo como alternativa para quien no la active.
@@ -2108,6 +2137,12 @@ function avisoDiarioHtml(prefs) {
   html += '</ul>';
   html += '</fieldset>';
 
+  // Paso 17f: mensaje breve y tranquilo para confirmar que, al cambiar de
+  // franja con el aviso ya activado, se actualizó también en el servicio
+  // (no solo aquí en el móvil). Vacío por defecto; wireAvisoDiario() le
+  // pone texto solo cuando hace falta.
+  html += '<p class="eyebrow" id="aviso-franja-confirmacion" aria-live="polite"></p>';
+
   if (prefs.activo) {
     html += '<p class="aviso-estado">Aviso activado para la franja elegida.</p>';
     html += '<button type="button" class="btn btn-secondary" id="aviso-desactivar-btn">Desactivar aviso</button>';
@@ -2137,7 +2172,29 @@ function wireAvisoDiario() {
   document.querySelectorAll('input[name="aviso-franja"]').forEach(function (radio) {
     radio.addEventListener('change', function () {
       var prefs = getRecordatorioPrefs();
-      saveRecordatorioPrefs(franjaElegida(), prefs.activo);
+      var nuevaFranja = franjaElegida();
+      saveRecordatorioPrefs(nuevaFranja, prefs.activo);
+
+      var confirmacionEl = document.getElementById('aviso-franja-confirmacion');
+      // Paso 17f: si el aviso ya está activado, cambiar de franja también
+      // debe avisar al servicio (si no, seguiría llegando el aviso a la
+      // franja anterior). Un mensaje breve y tranquilo confirma que se
+      // actualizó -- o, si falla, que al menos quedó guardado aquí.
+      if (prefs.activo && AVISO_ONESIGNAL_CONECTADO) {
+        if (confirmacionEl) { confirmacionEl.textContent = 'Actualizando la franja del aviso…'; }
+        conTiempoLimite(
+          inicializarOneSignal().then(function (OneSignal) {
+            return OneSignal.User.addTag('franja', nuevaFranja);
+          }),
+          12000
+        ).then(function () {
+          if (confirmacionEl) { confirmacionEl.textContent = 'Franja del aviso actualizada.'; }
+        }).catch(function () {
+          if (confirmacionEl) {
+            confirmacionEl.textContent = 'La franja se guardó en este móvil; se actualizará en el aviso en cuanto haya conexión.';
+          }
+        });
+      }
     });
   });
 
@@ -2154,7 +2211,11 @@ function wireAvisoDiario() {
       // evitar toques repetidos mientras el navegador muestra su diálogo.
       activarBtn.disabled = true;
       activarBtn.textContent = 'Activando…';
-      inicializarOneSignal().then(function (OneSignal) {
+      // Paso 17f: la carga del SDK, el init y el requestPermission juntos
+      // no pueden tardar más de 12 segundos -- si se quedan colgados (sin
+      // red, o el navegador no muestra el diálogo de permiso), mejor un
+      // mensaje tranquilo que un botón bloqueado para siempre.
+      conTiempoLimite(inicializarOneSignal().then(function (OneSignal) {
         // En iPhone, Safari sin instalar (sin "Añadir a pantalla de
         // inicio") no soporta notificaciones push -- lo comprobamos antes
         // de pedir permiso para poder mostrar un mensaje claro en vez de
@@ -2182,13 +2243,15 @@ function wireAvisoDiario() {
           }
           throw innerErr;
         });
-      }).catch(function (err) {
+      }), 12000).catch(function (err) {
         activarBtn.disabled = false;
         activarBtn.textContent = 'Activar aviso';
         if (err && err.message === 'no-soportado') {
           alert('Para activar el aviso en iPhone, primero añade la app a tu pantalla de inicio (Compartir → Añadir a pantalla de inicio) y ábrela desde su icono.');
         } else if (err && err.message === 'permiso-denegado') {
           alert('No se activó el aviso porque no se concedió el permiso de notificaciones. Puedes intentarlo de nuevo, o revisar el permiso de notificaciones de esta app en los ajustes de tu navegador o de tu móvil. En iPhone: Ajustes → Notificaciones → Mi Energía.');
+        } else if (err && err.message === 'tiempo-agotado') {
+          alert('Esto está tardando más de lo esperado. Comprueba tu conexión e inténtalo de nuevo.');
         } else {
           alert('No se pudo activar el aviso. Comprueba tu conexión e inténtalo de nuevo.');
         }
@@ -2220,14 +2283,52 @@ function wireAvisoDiario() {
   }
 }
 
-// HTML de la pantalla de Recordatorios (step-15, ampliada en paso 17a).
-// Las horas de las alarmas manuales no se guardan: vuelven a 09:00/21:00
-// cada vez que se entra (sigue la decisión original de no guardar horas de
-// alarma manual; la única excepción es la franja del aviso diario de
-// arriba, documentada en storage.js). El botón de .ics solo se muestra
-// donde puede funcionar (Android y Safari normal); dentro de la app
-// instalada en iPhone (standalone) se omite, porque WebKit bloquea esa
-// descarga en modo standalone.
+// Dos <select> sencillos (hora 0-23, minutos 00/15/30/45) para elegir una
+// hora sin usar input type="time" -- ese input se salía de la pantalla en
+// iPhone instalado y además algunos iOS lo muestran casi imposible de
+// tocar. "hora" llega como "HH:MM"; si los minutos no son uno de los 4
+// valores redondos, se ajusta al más cercano para que el select siempre
+// tenga una opción marcada.
+function horaSelectsHtml(idPrefix, hora, ariaHoraLabel, ariaMinutoLabel) {
+  var partes = (hora || '09:00').split(':');
+  var h = parseInt(partes[0], 10);
+  var m = parseInt(partes[1], 10);
+  if (isNaN(h) || h < 0 || h > 23) { h = 9; }
+  var minutosValidos = [0, 15, 30, 45];
+  if (minutosValidos.indexOf(m) === -1) {
+    m = minutosValidos.reduce(function (masCercano, candidato) {
+      return Math.abs(candidato - m) < Math.abs(masCercano - m) ? candidato : masCercano;
+    }, 0);
+  }
+
+  var html = '<div class="recordatorio-hora-row">';
+  html += '<select class="recordatorio-hora-select" id="' + idPrefix + '-h" aria-label="' + escapeHtml(ariaHoraLabel) + '">';
+  for (var hh = 0; hh < 24; hh++) {
+    var hhTexto = (hh < 10 ? '0' : '') + hh;
+    html += '<option value="' + hhTexto + '"' + (hh === h ? ' selected' : '') + '>' + hhTexto + '</option>';
+  }
+  html += '</select>';
+  html += '<span class="recordatorio-hora-separador" aria-hidden="true">:</span>';
+  html += '<select class="recordatorio-hora-select" id="' + idPrefix + '-m" aria-label="' + escapeHtml(ariaMinutoLabel) + '">';
+  minutosValidos.forEach(function (mm) {
+    var mmTexto = (mm < 10 ? '0' : '') + mm;
+    html += '<option value="' + mmTexto + '"' + (mm === m ? ' selected' : '') + '>' + mmTexto + '</option>';
+  });
+  html += '</select>';
+  html += '</div>';
+  return html;
+}
+
+// HTML de la pantalla de Recordatorios (step-15, ampliada en paso 17a y
+// 17e). Las horas de las alarmas manuales no se guardan: vuelven a
+// 09:00/21:00 cada vez que se entra (sigue la decisión original de no
+// guardar horas de alarma manual; la única excepción es la franja del
+// aviso diario de arriba, documentada en storage.js). Por eso tampoco se
+// copia aquí la hora del aviso diario -- son dos cosas distintas y no hay
+// que mezclarlas sin que la persona lo pida claramente. El botón de .ics
+// solo se muestra donde puede funcionar (Android y Safari normal); dentro
+// de la app instalada en iPhone (standalone) se omite, porque WebKit
+// bloquea esa descarga en modo standalone.
 function recordatoriosHtml(morning, night, showIcsSection, isIOS, isStandalone, prefs) {
   var html = '<h1>Recordatorios</h1>';
 
@@ -2236,45 +2337,58 @@ function recordatoriosHtml(morning, night, showIcsSection, isIOS, isStandalone, 
   html += '<div class="callout"><p>Los relojes de aquí abajo no crean ninguna alarma por sí solos: solo ' +
     'rellenan el texto de los pasos para que no tengas que escribir la hora a mano. La alarma de verdad se ' +
     'crea en la app Reloj de tu móvil, siguiendo esos pasos. No hay rachas ni aviso de la app si te lo saltas ' +
-    'algún día.</p></div>';
+    'algún día. Estas horas no cambian la hora del aviso diario de arriba, que es fija según la franja que ' +
+    'elegiste (9:00, 18:00 o 21:00).</p></div>';
 
   html += '<div class="recordatorio-field">';
-  html += '<label class="exercise-label" for="recordatorio-manana-hora">Por la mañana: registrar mi energía y elegir mi día</label>';
-  html += '<input type="time" class="exercise-input" id="recordatorio-manana-hora" value="' + escapeHtml(morning) + '">';
+  html += '<p class="exercise-label">Por la mañana: registrar mi energía y elegir mi día</p>';
+  html += horaSelectsHtml('recordatorio-manana-hora', morning, 'Hora de la alarma de la mañana', 'Minutos de la alarma de la mañana');
   html += '</div>';
   html += '<div class="recordatorio-field">';
-  html += '<label class="exercise-label" for="recordatorio-noche-hora">Por la noche: cerrar el día</label>';
-  html += '<input type="time" class="exercise-input" id="recordatorio-noche-hora" value="' + escapeHtml(night) + '">';
+  html += '<p class="exercise-label">Por la noche: cerrar el día</p>';
+  html += horaSelectsHtml('recordatorio-noche-hora', night, 'Hora de la alarma de la noche', 'Minutos de la alarma de la noche');
   html += '</div>';
 
-  html += '<h2>Pon una alarma en tu móvil</h2>';
-  html += '<p>Esta es la forma que funciona siempre, en cualquier teléfono: una alarma diaria normal, con un nombre que te recuerde qué tocaba.</p>';
+  var alarmaManualHtml = '<p>Esta es la forma que funciona siempre, en cualquier teléfono: una alarma diaria normal, con un nombre que te recuerde qué tocaba.</p>';
 
-  html += '<details class="platform-details"' + (isIOS ? ' open' : '') + '>';
-  html += '<summary>En iPhone (con la app Reloj)</summary>';
-  html += '<ol>';
-  html += '<li>Abre la app Reloj y toca "Alarma".</li>';
-  html += '<li>Toca el botón + y pon la hora en <span class="recordatorio-manana-texto">' + escapeHtml(morning) + '</span>.</li>';
-  html += '<li>En "Repetir", marca los siete días (o toca "Todos los días" si tu iPhone lo muestra así).</li>';
-  html += '<li>En "Etiqueta", escribe "Registrar mi energía y elegir mi día" y guarda.</li>';
-  html += '<li>Repite los mismos pasos a las <span class="recordatorio-noche-texto">' + escapeHtml(night) +
+  alarmaManualHtml += '<details class="platform-details"' + (isIOS ? ' open' : '') + '>';
+  alarmaManualHtml += '<summary>En iPhone (con la app Reloj)</summary>';
+  alarmaManualHtml += '<ol>';
+  alarmaManualHtml += '<li>Abre la app Reloj y toca "Alarma".</li>';
+  alarmaManualHtml += '<li>Toca el botón + y pon la hora en <span class="recordatorio-manana-texto">' + escapeHtml(morning) + '</span>.</li>';
+  alarmaManualHtml += '<li>En "Repetir", marca los siete días (o toca "Todos los días" si tu iPhone lo muestra así).</li>';
+  alarmaManualHtml += '<li>En "Etiqueta", escribe "Registrar mi energía y elegir mi día" y guarda.</li>';
+  alarmaManualHtml += '<li>Repite los mismos pasos a las <span class="recordatorio-noche-texto">' + escapeHtml(night) +
     '</span>, con la etiqueta "Cerrar el día".</li>';
-  html += '<li>Si tu móvil no muestra exactamente esto, busca lo que más se parezca: lo importante es que se repita cada día y tenga ese nombre.</li>';
-  html += '</ol>';
-  html += '</details>';
+  alarmaManualHtml += '<li>Si tu móvil no muestra exactamente esto, busca lo que más se parezca: lo importante es que se repita cada día y tenga ese nombre.</li>';
+  alarmaManualHtml += '</ol>';
+  alarmaManualHtml += '</details>';
 
-  html += '<details class="platform-details"' + (isIOS ? '' : ' open') + '>';
-  html += '<summary>En Android (con la app Reloj)</summary>';
-  html += '<ol>';
-  html += '<li>Abre la app Reloj y toca el botón + para añadir una alarma.</li>';
-  html += '<li>Pon la hora en <span class="recordatorio-manana-texto">' + escapeHtml(morning) + '</span>.</li>';
-  html += '<li>Marca todos los días para que se repita (en algunos móviles hay una casilla "Repetir").</li>';
-  html += '<li>En «Etiqueta» o «Nombre de alarma», escribe "Registrar mi energía y elegir mi día". Si tu móvil tiene botón Guardar, púlsalo.</li>';
-  html += '<li>Repite los mismos pasos a las <span class="recordatorio-noche-texto">' + escapeHtml(night) +
+  alarmaManualHtml += '<details class="platform-details"' + (isIOS ? '' : ' open') + '>';
+  alarmaManualHtml += '<summary>En Android (con la app Reloj)</summary>';
+  alarmaManualHtml += '<ol>';
+  alarmaManualHtml += '<li>Abre la app Reloj y toca el botón + para añadir una alarma.</li>';
+  alarmaManualHtml += '<li>Pon la hora en <span class="recordatorio-manana-texto">' + escapeHtml(morning) + '</span>.</li>';
+  alarmaManualHtml += '<li>Marca todos los días para que se repita (en algunos móviles hay una casilla "Repetir").</li>';
+  alarmaManualHtml += '<li>En «Etiqueta» o «Nombre de alarma», escribe "Registrar mi energía y elegir mi día". Si tu móvil tiene botón Guardar, púlsalo.</li>';
+  alarmaManualHtml += '<li>Repite los mismos pasos a las <span class="recordatorio-noche-texto">' + escapeHtml(night) +
     '</span>, con la etiqueta "Cerrar el día".</li>';
-  html += '<li>Si tu móvil no muestra exactamente esto, busca lo que más se parezca: lo importante es que se repita cada día y tenga ese nombre.</li>';
-  html += '</ol>';
-  html += '</details>';
+  alarmaManualHtml += '<li>Si tu móvil no muestra exactamente esto, busca lo que más se parezca: lo importante es que se repita cada día y tenga ese nombre.</li>';
+  alarmaManualHtml += '</ol>';
+  alarmaManualHtml += '</details>';
+
+  if (prefs.activo) {
+    // Paso 17e: con el aviso ya activado, la alarma manual es una
+    // alternativa secundaria -- se pliega para no repetir dos avisos a la
+    // vista a la vez. Sigue disponible igual, solo que hay que abrirla.
+    html += '<details class="platform-details" id="recordatorio-alarma-alt">';
+    html += '<summary>Prefiero una alarma en mi Reloj (alternativa)</summary>';
+    html += alarmaManualHtml;
+    html += '</details>';
+  } else {
+    html += '<h2>Pon una alarma en tu móvil</h2>';
+    html += alarmaManualHtml;
+  }
 
   if (showIcsSection) {
     html += '<h2>Alternativa: archivo para el calendario (experimental)</h2>';
@@ -2290,29 +2404,43 @@ function recordatoriosHtml(morning, night, showIcsSection, isIOS, isStandalone, 
   return html;
 }
 
-// Conecta los selectores de hora (actualizan al instante el texto de las
-// instrucciones) y el botón de .ics (lo genera y descarga en el momento,
-// con las horas elegidas; no guarda nada).
+// Conecta los selectores de hora (paso 17e: ahora son dos <select> -- hora
+// y minutos -- en vez de un input type="time"). Actualizan al instante el
+// texto de las instrucciones, y el botón de .ics los usa para generar el
+// archivo en el momento; no se guarda nada de esto.
 function wireRecordatorios() {
-  var morningInput = document.getElementById('recordatorio-manana-hora');
-  var nightInput = document.getElementById('recordatorio-noche-hora');
+  var mananaH = document.getElementById('recordatorio-manana-hora-h');
+  var mananaM = document.getElementById('recordatorio-manana-hora-m');
+  var nocheH = document.getElementById('recordatorio-noche-hora-h');
+  var nocheM = document.getElementById('recordatorio-noche-hora-m');
   var morningTextEls = document.querySelectorAll('.recordatorio-manana-texto');
   var nightTextEls = document.querySelectorAll('.recordatorio-noche-texto');
 
-  morningInput.addEventListener('input', function () {
-    var v = morningInput.value || '09:00';
-    morningTextEls.forEach(function (el) { el.textContent = v; });
+  function morningValue() {
+    return (mananaH.value || '09') + ':' + (mananaM.value || '00');
+  }
+  function nightValue() {
+    return (nocheH.value || '21') + ':' + (nocheM.value || '00');
+  }
+
+  [mananaH, mananaM].forEach(function (sel) {
+    sel.addEventListener('change', function () {
+      var v = morningValue();
+      morningTextEls.forEach(function (el) { el.textContent = v; });
+    });
   });
-  nightInput.addEventListener('input', function () {
-    var v = nightInput.value || '21:00';
-    nightTextEls.forEach(function (el) { el.textContent = v; });
+  [nocheH, nocheM].forEach(function (sel) {
+    sel.addEventListener('change', function () {
+      var v = nightValue();
+      nightTextEls.forEach(function (el) { el.textContent = v; });
+    });
   });
 
   var icsBtn = document.getElementById('recordatorio-ics-btn');
   if (icsBtn) {
     icsBtn.addEventListener('click', function () {
-      var morning = morningInput.value || '09:00';
-      var night = nightInput.value || '21:00';
+      var morning = morningValue();
+      var night = nightValue();
       var ics = buildRecordatoriosICS(morning, night);
       var blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
       var url = URL.createObjectURL(blob);

@@ -346,10 +346,46 @@ footer a {
   cursor: pointer;
 }
 
-/* ---------- Recordatorios (step-15) ---------- */
+/* ---------- Recordatorios (step-15, selects de hora en paso 17e) ---------- */
 
 .recordatorio-field {
   margin: 0 0 var(--space-4);
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Paso 17e: sustituye el input[type="time"] (que se salía de la pantalla
+   en iPhone instalado) por dos <select> normales. min-width:0 es necesario
+   porque, dentro de un contenedor flex, un <select> no se encoge por si
+   solo aunque el padre tenga max-width:100% -- sin esto, el texto largo de
+   las horas puede volver a empujar la fila fuera de la pantalla. */
+.recordatorio-hora-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.recordatorio-hora-select {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-input);
+  font-family: inherit;
+  font-size: 1rem;
+  color: var(--color-dark-text);
+  background-color: var(--color-white);
+}
+
+.recordatorio-hora-separador {
+  color: var(--color-dark-text);
+  font-weight: 700;
+  flex-shrink: 0;
 }
 
 /* ---------- Recuadros destacados y firma ---------- */
