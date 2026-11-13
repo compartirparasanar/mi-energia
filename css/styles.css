@@ -874,7 +874,7 @@ a.exercise-card:hover, a.exercise-card:focus-visible {
   color: var(--color-dark-text);
 }
 
-.aviso-franja-row input[type="radio"] {
+.aviso-franja-row input[type="checkbox"] {
   width: 24px;
   height: 24px;
   flex-shrink: 0;

@@ -39,10 +39,11 @@ var MI_DIA_KEY = 'mi-energia-mi-dia';
 // con la guía" / "Empezar la guía" de Inicio. Un solo número, no un dato de
 // uso: no cuenta cuántas veces se ha leído, solo el más reciente.
 var ULTIMO_CAPITULO_KEY = 'mi-energia-ultimo-capitulo';
-// Preferencia del "Aviso diario" opcional (paso 17): franja elegida
-// (manana|tarde|noche) y si la persona lo activo. EXCEPCION DOCUMENTADA a
-// la decision anterior de no guardar horas de recordatorios -- aqui no se
-// guarda una hora exacta, solo una franja, y unicamente para esta funcion
+// Preferencia del "Aviso diario" opcional (paso 17): franjas elegidas
+// (paso 17k: una lista, de 0 a 3 valores de manana|tarde|noche -- antes
+// era una sola) y si la persona lo activo. EXCEPCION DOCUMENTADA a la
+// decision anterior de no guardar horas de recordatorios -- aqui no se
+// guarda una hora exacta, solo franjas, y unicamente para esta funcion
 // opcional de aviso push. No es un dato de energia: no se incluye en la
 // exportacion/importacion de la copia de seguridad (ver CLAUDE.md, paso 17).
 var RECORDATORIO_PREFS_KEY = 'mi-energia-recordatorio';
@@ -275,25 +276,49 @@ function setUltimoCapitulo(n) {
 // Preferencia del "Aviso diario" opcional (paso 17). activo siempre
 // empieza en false: paso 17a no conecta con ningun servicio, asi que esto
 // solo guarda lo que la persona eligio en la pantalla de Recordatorios.
+// Paso 17k: ahora se pueden marcar varias franjas a la vez -- "franjas" es
+// una lista (0 a 3 valores). Migra sola el formato antiguo de una sola
+// franja ({franja: 'manana', ...}) a la lista nueva, sin perder la
+// eleccion de quien ya lo tuviera guardado. Por defecto, sin nada guardado
+// todavia, no hay ninguna franja marcada (antes "manana" quedaba marcada
+// de inicio aunque la persona no hubiera elegido nada).
 function getRecordatorioPrefs() {
   var raw = localStorage.getItem(RECORDATORIO_PREFS_KEY);
   if (!raw) {
-    return { franja: 'manana', activo: false };
+    return { franjas: [], activo: false };
   }
   try {
     var parsed = JSON.parse(raw);
-    var franja = (parsed && RECORDATORIO_FRANJAS.indexOf(parsed.franja) !== -1) ? parsed.franja : 'manana';
-    return { franja: franja, activo: !!(parsed && parsed.activo) };
+    var franjas;
+    if (parsed && Array.isArray(parsed.franjas)) {
+      franjas = parsed.franjas.filter(function (f) {
+        return RECORDATORIO_FRANJAS.indexOf(f) !== -1;
+      });
+    } else if (parsed && RECORDATORIO_FRANJAS.indexOf(parsed.franja) !== -1) {
+      // Formato antiguo (antes de paso 17k): una sola franja.
+      franjas = [parsed.franja];
+    } else {
+      franjas = [];
+    }
+    // Sin duplicados, en el orden fijo manana/tarde/noche.
+    var unicas = RECORDATORIO_FRANJAS.filter(function (f) {
+      return franjas.indexOf(f) !== -1;
+    });
+    // El aviso nunca queda "activo" sin ninguna franja marcada.
+    var activo = !!(parsed && parsed.activo) && unicas.length > 0;
+    return { franjas: unicas, activo: activo };
   } catch (e) {
-    return { franja: 'manana', activo: false };
+    return { franjas: [], activo: false };
   }
 }
 
-function saveRecordatorioPrefs(franja, activo) {
-  if (RECORDATORIO_FRANJAS.indexOf(franja) === -1) {
-    franja = 'manana';
-  }
-  localStorage.setItem(RECORDATORIO_PREFS_KEY, JSON.stringify({ franja: franja, activo: !!activo }));
+function saveRecordatorioPrefs(franjas, activo) {
+  var lista = Array.isArray(franjas) ? franjas : [];
+  var unicas = RECORDATORIO_FRANJAS.filter(function (f) {
+    return lista.indexOf(f) !== -1;
+  });
+  activo = !!activo && unicas.length > 0;
+  localStorage.setItem(RECORDATORIO_PREFS_KEY, JSON.stringify({ franjas: unicas, activo: activo }));
 }
 
 // Valida "HH:MM" con minutos en uno de los 4 valores redondos que usan los

@@ -272,6 +272,18 @@ function franjaPrincipalLabel(franja) {
   return 'Mañana';
 }
 
+// Paso 17k: junta las franjas marcadas en una frase corta en español
+// ("Mañana", "Mañana y Noche", "Mañana, Tarde y Noche"), para la línea de
+// estado de Inicio y de Recordatorios. Con la lista vacía devuelve ''
+// (no debería llegar a mostrarse: con 0 franjas el aviso nunca está
+// activo, ver getRecordatorioPrefs() en storage.js).
+function franjasListLabel(franjas) {
+  var etiquetas = (franjas || []).map(franjaPrincipalLabel);
+  if (etiquetas.length === 0) { return ''; }
+  if (etiquetas.length === 1) { return etiquetas[0]; }
+  return etiquetas.slice(0, -1).join(', ') + ' y ' + etiquetas[etiquetas.length - 1];
+}
+
 // Tarjeta (o línea de estado) del Aviso diario en Inicio (paso 17i): hace
 // visible la función de Recordatorios, que antes solo se veía en el pie de
 // página. Pura navegación -- nunca carga ni llama nada de OneSignal aqui,
@@ -281,7 +293,7 @@ function franjaPrincipalLabel(franja) {
 function homeAvisoCardHtml(prefs) {
   if (prefs.activo) {
     var html = '<div class="bento-card bento-card-wide bento-card-beige bento-aviso-status">';
-    html += '<p class="bento-aviso-status-text">Aviso activo · ' + escapeHtml(franjaPrincipalLabel(prefs.franja)) + '</p>';
+    html += '<p class="bento-aviso-status-text">Aviso activo · ' + escapeHtml(franjasListLabel(prefs.franjas)) + '</p>';
     html += '<a class="bento-skip-link" href="#/recordatorios">Cambiar</a>';
     html += '</div>';
     return html;
@@ -2169,6 +2181,7 @@ function avisoDiarioHtml(prefs) {
   // la hora exacta va debajo, en texto más suave, para no competir con
   // los relojes de la alarma manual de más abajo. Los valores reales de
   // franja (f.id) y las horas de envío no cambian, solo cómo se muestran.
+  // Paso 17k: de radio (una sola franja) a casilla (varias a la vez).
   var franjas = [
     { id: 'manana', principal: 'Mañana', hora: 'a partir de las 9:00' },
     { id: 'tarde', principal: 'Tarde', hora: 'a partir de las 18:00' },
@@ -2181,17 +2194,17 @@ function avisoDiarioHtml(prefs) {
 
   html += '<div class="callout"><p><strong>Qué sale de tu móvil si lo activas:</strong> solo lo mínimo que ' +
     'necesita el servicio que envía el aviso (sistema operativo, idioma, zona horaria, país aproximado, modelo ' +
-    'de tu dispositivo y la franja que elijas abajo). <strong>Nunca se envían tus registros de energía, tus ' +
+    'de tu dispositivo y las franjas que elijas abajo). <strong>Nunca se envían tus registros de energía, tus ' +
     'notas ni nada de lo que guardas en esta app.</strong> Puedes leer el detalle completo en ' +
     '<a href="#/privacidad">Privacidad</a>.</p></div>';
 
   html += '<fieldset class="aviso-franjas-fieldset">';
-  html += '<legend class="exercise-label">¿Cuándo quieres el aviso?</legend>';
+  html += '<legend class="exercise-label">¿Cuándo quieres tu aviso diario? Puedes elegir más de uno.</legend>';
   html += '<ul class="aviso-franjas">';
   franjas.forEach(function (f) {
-    var checked = prefs.franja === f.id ? ' checked' : '';
+    var checked = prefs.franjas.indexOf(f.id) !== -1 ? ' checked' : '';
     html += '<li class="aviso-franja-row">';
-    html += '<input type="radio" id="aviso-franja-' + f.id + '" name="aviso-franja" value="' + f.id + '"' + checked + '>';
+    html += '<input type="checkbox" id="aviso-franja-' + f.id + '" name="aviso-franja" value="' + f.id + '"' + checked + '>';
     html += '<label for="aviso-franja-' + f.id + '" class="aviso-franja-label">';
     html += '<span class="aviso-franja-principal">' + escapeHtml(f.principal) + '</span>';
     html += '<span class="aviso-franja-hora">' + escapeHtml(f.hora) + '</span>';
@@ -2202,13 +2215,15 @@ function avisoDiarioHtml(prefs) {
   html += '</fieldset>';
 
   // Paso 17f: mensaje breve y tranquilo para confirmar que, al cambiar de
-  // franja con el aviso ya activado, se actualizó también en el servicio
-  // (no solo aquí en el móvil). Vacío por defecto; wireAvisoDiario() le
-  // pone texto solo cuando hace falta.
+  // franjas con el aviso ya activado, se actualizó también en el servicio
+  // (no solo aquí en el móvil). Paso 17k: el mismo sitio sirve también
+  // para el mensaje sereno de "elige al menos una franja" / "aviso
+  // desactivado al desmarcar todas". Vacío por defecto; wireAvisoDiario()
+  // le pone texto solo cuando hace falta.
   html += '<p class="eyebrow" id="aviso-franja-confirmacion" aria-live="polite"></p>';
 
   if (prefs.activo) {
-    html += '<p class="aviso-estado">Aviso activado para la franja elegida.</p>';
+    html += '<p class="aviso-estado">Aviso activado · ' + escapeHtml(franjasListLabel(prefs.franjas)) + '.</p>';
     html += '<button type="button" class="btn btn-secondary" id="aviso-desactivar-btn">Desactivar aviso</button>';
   } else {
     html += '<button type="button" class="btn" id="aviso-activar-btn">Activar aviso</button>';
@@ -2230,7 +2245,7 @@ function avisoDiarioHtml(prefs) {
 // (alternativa)" según si el aviso quedó activo -- solo cambia su
 // atributo "open", nunca su contenido, así que los selectores de hora de
 // dentro siguen intactos.
-function actualizarAvisoZona() {
+function actualizarAvisoZona(mensaje) {
   var zona = document.getElementById('aviso-diario-zona');
   if (!zona) { return; }
   var prefs = getRecordatorioPrefs();
@@ -2238,55 +2253,127 @@ function actualizarAvisoZona() {
   wireAvisoDiario();
   var alarmaAlt = document.getElementById('recordatorio-alarma-alt');
   if (alarmaAlt) { alarmaAlt.open = !prefs.activo; }
+  // Paso 17k: un mensaje sereno opcional que sobrevive al repintado de
+  // arriba (por ejemplo, al desactivarse solo el aviso porque se
+  // desmarcaron todas las franjas).
+  if (mensaje) {
+    var confirmacionEl = document.getElementById('aviso-franja-confirmacion');
+    if (confirmacionEl) { confirmacionEl.textContent = mensaje; }
+  }
 }
 
-// Conecta los controles del "Aviso diario" (paso 17a): franja elegida y
-// botón activar/desactivar. Todo lo que hace es leer/guardar la preferencia
+// Conecta los controles del "Aviso diario" (paso 17a; paso 17k: varias
+// franjas a la vez con casillas, no una sola con radio) y el botón
+// activar/desactivar. Todo lo que hace es leer/guardar la preferencia
 // local vía storage.js y actualizar su propia zona de la pantalla -- no
-// toca la red salvo al activar/desactivar de verdad.
+// toca la red salvo al activar/desactivar/cambiar franjas de verdad.
 function wireAvisoDiario() {
   var activarBtn = document.getElementById('aviso-activar-btn');
   var desactivarBtn = document.getElementById('aviso-desactivar-btn');
 
-  function franjaElegida() {
-    var checked = document.querySelector('input[name="aviso-franja"]:checked');
-    return checked ? checked.value : 'manana';
+  // Franjas actualmente marcadas en las casillas, en el orden fijo
+  // manana/tarde/noche (el mismo en que se dibujan).
+  function franjasElegidas() {
+    var marcadas = [];
+    document.querySelectorAll('input[name="aviso-franja"]:checked').forEach(function (checkbox) {
+      marcadas.push(checkbox.value);
+    });
+    return marcadas;
   }
 
-  document.querySelectorAll('input[name="aviso-franja"]').forEach(function (radio) {
-    radio.addEventListener('change', function () {
-      var prefs = getRecordatorioPrefs();
-      var nuevaFranja = franjaElegida();
-      saveRecordatorioPrefs(nuevaFranja, prefs.activo);
+  // Paso 17k: sincroniza las etiquetas de OneSignal con las franjas
+  // marcadas ahora mismo -- una etiqueta por franja ("aviso_manana",
+  // "aviso_tarde", "aviso_noche"), y de paso quita la etiqueta antigua de
+  // una sola franja ("franja") que ya no se usa.
+  function sincronizarEtiquetasFranjas(OneSignal, franjasActivas) {
+    RECORDATORIO_FRANJAS.forEach(function (f) {
+      if (franjasActivas.indexOf(f) !== -1) {
+        OneSignal.User.addTag('aviso_' + f, '1');
+      } else {
+        OneSignal.User.removeTag('aviso_' + f);
+      }
+    });
+    OneSignal.User.removeTag('franja');
+  }
 
-      var confirmacionEl = document.getElementById('aviso-franja-confirmacion');
-      // Paso 17f: si el aviso ya está activado, cambiar de franja también
-      // debe avisar al servicio (si no, seguiría llegando el aviso a la
-      // franja anterior). Un mensaje breve y tranquilo confirma que se
-      // actualizó -- o, si falla, que al menos quedó guardado aquí.
-      if (prefs.activo && AVISO_ONESIGNAL_CONECTADO) {
-        if (confirmacionEl) { confirmacionEl.textContent = 'Actualizando la franja del aviso…'; }
+  document.querySelectorAll('input[name="aviso-franja"]').forEach(function (checkbox) {
+    checkbox.addEventListener('change', function () {
+      var prefs = getRecordatorioPrefs();
+      var nuevasFranjas = franjasElegidas();
+
+      // Paso 17k: si el aviso ya estaba activo y se desmarcó la última
+      // franja, no tiene sentido dejarlo "activo" sin ninguna -- se
+      // desactiva solo, con un mensaje sereno (sin alerta ni bloqueo).
+      if (prefs.activo && nuevasFranjas.length === 0) {
+        if (!AVISO_ONESIGNAL_CONECTADO) {
+          saveRecordatorioPrefs([], false);
+          actualizarAvisoZona('Aviso desactivado: no quedó ninguna franja marcada. Marca una cuando quieras volver a activarlo.');
+          return;
+        }
         conTiempoLimite(
           inicializarOneSignal().then(function (OneSignal) {
-            return OneSignal.User.addTag('franja', nuevaFranja);
+            sincronizarEtiquetasFranjas(OneSignal, []);
+            return OneSignal.User.PushSubscription.optOut();
+          }),
+          12000
+        ).catch(function () {
+          // Si falla la baja remota (por ejemplo sin conexión), igualmente
+          // queda desactivado aquí -- lo importante es que no se muestre
+          // como "activo" sin ninguna franja marcada.
+        }).then(function () {
+          saveRecordatorioPrefs([], false);
+          actualizarAvisoZona('Aviso desactivado: no quedó ninguna franja marcada. Marca una cuando quieras volver a activarlo.');
+        });
+        return;
+      }
+
+      saveRecordatorioPrefs(nuevasFranjas, prefs.activo);
+
+      // Paso 17f/17k: si el aviso ya está activado, cambiar las franjas
+      // también debe avisar al servicio (si no, seguiría llegando el
+      // aviso a las franjas anteriores). Repintamos ya la zona (la línea
+      // "Aviso activado · ..." debe reflejar las franjas nuevas al
+      // instante, no solo cuando se pulsa Activar/Desactivar) y un
+      // mensaje breve y tranquilo confirma además que se actualizó en el
+      // servicio -- o, si falla, que al menos quedó guardado aquí.
+      if (prefs.activo && AVISO_ONESIGNAL_CONECTADO) {
+        actualizarAvisoZona('Actualizando el aviso…');
+        conTiempoLimite(
+          inicializarOneSignal().then(function (OneSignal) {
+            sincronizarEtiquetasFranjas(OneSignal, nuevasFranjas);
           }),
           12000
         ).then(function () {
-          if (confirmacionEl) { confirmacionEl.textContent = 'Franja del aviso actualizada.'; }
+          var elActualizado = document.getElementById('aviso-franja-confirmacion');
+          if (elActualizado) { elActualizado.textContent = 'Aviso actualizado.'; }
         }).catch(function () {
-          if (confirmacionEl) {
-            confirmacionEl.textContent = 'La franja se guardó en este móvil; se actualizará en el aviso en cuanto haya conexión.';
+          var elFallo = document.getElementById('aviso-franja-confirmacion');
+          if (elFallo) {
+            elFallo.textContent = 'Se guardó en este móvil; se actualizará en el aviso en cuanto haya conexión.';
           }
         });
+      } else if (prefs.activo) {
+        actualizarAvisoZona();
       }
     });
   });
 
   if (activarBtn) {
     activarBtn.addEventListener('click', function () {
-      var franja = franjaElegida();
+      var franjas = franjasElegidas();
+      var confirmacionEl = document.getElementById('aviso-franja-confirmacion');
+
+      // Paso 17k: hace falta al menos una franja marcada para activar --
+      // un mensaje sereno en vez de una alerta, sin tocar la red.
+      if (franjas.length === 0) {
+        if (confirmacionEl) {
+          confirmacionEl.textContent = 'Elige al menos una franja (mañana, tarde o noche) para activar el aviso.';
+        }
+        return;
+      }
+
       if (!AVISO_ONESIGNAL_CONECTADO) {
-        saveRecordatorioPrefs(franja, true);
+        saveRecordatorioPrefs(franjas, true);
         actualizarAvisoZona();
         return;
       }
@@ -2311,8 +2398,8 @@ function wireAvisoDiario() {
           if (!OneSignal.Notifications.permission) {
             throw new Error('permiso-denegado');
           }
-          OneSignal.User.addTag('franja', franja);
-          saveRecordatorioPrefs(franja, true);
+          sincronizarEtiquetasFranjas(OneSignal, franjas);
+          saveRecordatorioPrefs(franjas, true);
           actualizarAvisoZona();
         }).catch(function (innerErr) {
           if (innerErr && innerErr.message === 'permiso-denegado') {
@@ -2344,14 +2431,15 @@ function wireAvisoDiario() {
   }
   if (desactivarBtn) {
     desactivarBtn.addEventListener('click', function () {
-      var franja = franjaElegida();
+      var franjas = franjasElegidas();
       if (!AVISO_ONESIGNAL_CONECTADO) {
-        saveRecordatorioPrefs(franja, false);
+        saveRecordatorioPrefs(franjas, false);
         actualizarAvisoZona();
         return;
       }
       desactivarBtn.disabled = true;
       inicializarOneSignal().then(function (OneSignal) {
+        sincronizarEtiquetasFranjas(OneSignal, []);
         return OneSignal.User.PushSubscription.optOut();
       }).catch(function () {
         // Si optOut() falla (por ejemplo sin conexión), seguimos
@@ -2360,7 +2448,7 @@ function wireAvisoDiario() {
         // app. Si vuelve a pulsar Desactivar más adelante con conexión,
         // se reintenta el optOut() remoto.
       }).then(function () {
-        saveRecordatorioPrefs(franja, false);
+        saveRecordatorioPrefs(franjas, false);
         actualizarAvisoZona();
       });
     });
@@ -2571,7 +2659,7 @@ function renderPrivacy() {
   html += '<p>Lo mismo ocurre con "Pequeño paso de hoy" (si hoy te ha pasado algo o no, dentro de Mi día): se guarda solo en este móvil, y se incluye igual en la exportación, la importación y el borrado de datos.</p>';
   html += '<p>Las etiquetas opcionales que añadas a un registro (por ejemplo "Dormí mal" o "Pude descansar") se guardan junto a ese registro, solo en este móvil, con el mismo tratamiento que el resto de tus datos.</p>';
   html += '<p>Lo mismo ocurre con lo que eliges cada día en Mi día, lo que marcas al cerrar el día, las cosas que añades tú misma a las listas y el capítulo de la guía por el que vas: se guarda solo en este móvil, y se incluye igual en la exportación, la importación y el borrado de datos.</p>';
-  html += '<p>Tus preferencias de <a href="#/recordatorios">Recordatorios</a> -- si activaste el aviso diario, la franja que elegiste, y las horas que pusiste en los selectores de la alarma manual de tu Reloj -- también se guardan solo en este móvil, para que no tengas que volver a elegirlas cada vez. Lo mismo ocurre si tocas "Ahora no" en la tarjeta del aviso diario de Inicio: solo se guarda en este móvil que ya la cerraste, para no volver a mostrártela. Al ser preferencias de la interfaz y no datos de energía, no se incluyen en la exportación ni la importación de la copia de seguridad.</p>';
+  html += '<p>Tus preferencias de <a href="#/recordatorios">Recordatorios</a> -- si activaste el aviso diario, las franjas que elegiste (puede ser más de una), y las horas que pusiste en los selectores de la alarma manual de tu Reloj -- también se guardan solo en este móvil, para que no tengas que volver a elegirlas cada vez. Lo mismo ocurre si tocas "Ahora no" en la tarjeta del aviso diario de Inicio: solo se guarda en este móvil que ya la cerraste, para no volver a mostrártela. Al ser preferencias de la interfaz y no datos de energía, no se incluyen en la exportación ni la importación de la copia de seguridad.</p>';
 
   html += '<h2>Qué no recogemos</h2>';
   html += '<p>No te pedimos nombre, correo ni ubicación para usar la app. No usamos herramientas de analítica ' +
@@ -2585,13 +2673,13 @@ function renderPrivacy() {
     'momento de escribir esto el aviso diario todavía no envía nada: la conexión real llega en una actualización ' +
     'posterior.</em></p>';
   html += '<p>Si activas el aviso diario en <a href="#/recordatorios">Recordatorios</a>, un servicio externo ' +
-    'especializado en avisos (OneSignal) se encarga de enviártelo a la franja que elijas. Es opcional: si no lo ' +
-    'activas, esta sección no te afecta y no se envía nada.</p>';
+    'especializado en avisos (OneSignal) se encarga de enviártelo a las franjas que elijas -- puedes elegir más ' +
+    'de una. Es opcional: si no lo activas, esta sección no te afecta y no se envía nada.</p>';
   html += '<p><strong>Qué recibe ese servicio:</strong> el sistema operativo y modelo de tu dispositivo, el ' +
     'idioma, la zona horaria, el país aproximado (a partir de tu conexión), el estado del permiso de ' +
-    'notificaciones, un identificador técnico para poder enviarte el aviso, y la franja horaria que elijas ' +
-    '(mañana, tarde o noche). <strong>Nunca</strong> tus registros de energía, tus notas, ni nada de lo demás ' +
-    'que guarda esta app.</p>';
+    'notificaciones, un identificador técnico para poder enviarte el aviso, y una etiqueta por cada franja ' +
+    'horaria que actives (aviso_manana, aviso_tarde y/o aviso_noche). <strong>Nunca</strong> tus registros de ' +
+    'energía, tus notas, ni nada de lo demás que guarda esta app.</p>';
   html += '<p><strong>Para qué se usa:</strong> solo para mandarte el aviso diario que tú elegiste. No se usa ' +
     'para publicidad ni se vende a nadie.</p>';
   html += '<p><strong>Base legal:</strong> tu consentimiento explícito, al pulsar "Activar aviso". Puedes ' +
