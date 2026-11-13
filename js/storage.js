@@ -58,6 +58,14 @@ var RECORDATORIO_FRANJAS = ['manana', 'tarde', 'noche'];
 // de seguridad (ver CLAUDE.md, paso 17), por ser una preferencia de la
 // interfaz y no un dato de energia.
 var ALARMA_MANUAL_KEY = 'mi-energia-alarma-manual';
+// "Ahora no" de la tarjeta del Aviso diario en Inicio (paso 17i): un solo
+// booleano local, igual que RESUMEN_SEEN_KEY -- solo recuerda que la
+// persona cerró la tarjeta, para no volver a mostrarla en Inicio. Si luego
+// activa el aviso desde Recordatorios, esto deja de importar: Inicio
+// muestra la línea de estado "Aviso activo" en su lugar (ver renderHome en
+// views.js). No se envía a ningún sitio y no se incluye en la copia de
+// seguridad, por ser una preferencia de la interfaz y no un dato de energia.
+var AVISO_INICIO_OCULTO_KEY = 'mi-energia-aviso-inicio-oculto';
 
 function todayDateString() {
   var now = new Date();
@@ -315,6 +323,16 @@ function saveAlarmaManualHoras(morning, night) {
   if (!isValidHoraRedonda(morning)) { morning = '09:00'; }
   if (!isValidHoraRedonda(night)) { night = '21:00'; }
   localStorage.setItem(ALARMA_MANUAL_KEY, JSON.stringify({ morning: morning, night: night }));
+}
+
+// Devuelve si la persona ya cerró ("Ahora no") la tarjeta del Aviso diario
+// en Inicio alguna vez (paso 17i), para no volver a mostrarla ahi.
+function hasOcultadoAvisoInicio() {
+  return localStorage.getItem(AVISO_INICIO_OCULTO_KEY) === '1';
+}
+
+function ocultarAvisoInicio() {
+  localStorage.setItem(AVISO_INICIO_OCULTO_KEY, '1');
 }
 
 // Comprueba recursivamente que un valor de respuesta de ejercicio es solo

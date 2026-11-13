@@ -774,6 +774,19 @@ footer a {
   margin-top: 0;
 }
 
+/* Paso 17j: version de .exercise-card como enlace directo (Herramientas ->
+   Recordatorios), no como "details" desplegable -- mismo aspecto de
+   tarjeta, sin el subrayado ni el color de enlace por defecto. */
+a.exercise-card {
+  display: block;
+  color: var(--color-dark-text);
+  text-decoration: none;
+}
+
+a.exercise-card:hover, a.exercise-card:focus-visible {
+  box-shadow: 0 6px 20px rgba(68, 55, 40, 0.14);
+}
+
 .exercise-label {
   display: block;
   margin-bottom: var(--space-2);
@@ -1107,6 +1120,21 @@ a.bento-card:hover, a.bento-card:focus-visible {
 
 .bento-card-beige {
   background-color: var(--color-beige);
+}
+
+/* Línea de estado "Aviso activo · Mañana" de Inicio (paso 17i), cuando el
+   aviso diario ya está activado: mas compacta que la tarjeta completa, en
+   una sola fila. */
+.bento-aviso-status {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.bento-aviso-status-text {
+  margin: 0;
+  color: var(--color-dark-text);
 }
 
 .bento-card-header-row {

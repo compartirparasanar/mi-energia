@@ -263,6 +263,41 @@ function homeDiaSectionHtml(today) {
   return html;
 }
 
+// Etiqueta corta de la franja del Aviso diario ("Mañana"/"Tarde"/"Noche"),
+// para la tarjeta/línea de Inicio (paso 17i). Mismos 3 valores que
+// RECORDATORIO_FRANJAS en storage.js.
+function franjaPrincipalLabel(franja) {
+  if (franja === 'tarde') { return 'Tarde'; }
+  if (franja === 'noche') { return 'Noche'; }
+  return 'Mañana';
+}
+
+// Tarjeta (o línea de estado) del Aviso diario en Inicio (paso 17i): hace
+// visible la función de Recordatorios, que antes solo se veía en el pie de
+// página. Pura navegación -- nunca carga ni llama nada de OneSignal aqui,
+// eso solo ocurre dentro de los botones de #/recordatorios (ver
+// cargarOneSignalSDK()/inicializarOneSignal() y AVISO_ONESIGNAL_CONECTADO
+// mas abajo).
+function homeAvisoCardHtml(prefs) {
+  if (prefs.activo) {
+    var html = '<div class="bento-card bento-card-wide bento-card-beige bento-aviso-status">';
+    html += '<p class="bento-aviso-status-text">Aviso activo · ' + escapeHtml(franjaPrincipalLabel(prefs.franja)) + '</p>';
+    html += '<a class="bento-skip-link" href="#/recordatorios">Cambiar</a>';
+    html += '</div>';
+    return html;
+  }
+  if (hasOcultadoAvisoInicio()) {
+    return '';
+  }
+  var html = '<div class="bento-card bento-card-wide bento-card-beige" id="home-aviso-card">';
+  html += '<h3>Un aviso diario, si te ayuda</h3>';
+  html += '<p>Te lo recordamos a la hora que elijas. Sin rachas ni culpa.</p>';
+  html += '<a class="btn" href="#/recordatorios">Activar aviso</a>';
+  html += '<button type="button" class="bento-skip-link" id="home-aviso-skip-btn">Ahora no</button>';
+  html += '</div>';
+  return html;
+}
+
 function renderHome() {
   var today = getTodayEntry();
   var entries = getEnergyLog();
@@ -319,6 +354,11 @@ function renderHome() {
 
   html += '</div>';
 
+  // Aviso diario (paso 17i): visible aquí, entre la tarjeta principal y
+  // "Últimos 7 días" -- antes solo estaba en el pie de página, casi
+  // invisible.
+  html += homeAvisoCardHtml(getRecordatorioPrefs());
+
   html += '<a class="bento-card bento-card-wide bento-mini-chart" href="#/evolucion">';
   html += '<div class="bento-card-header-row"><p class="eyebrow">Últimos 7 días</p><span class="bento-card-chevron" aria-hidden="true">›</span></div>';
   html += '<h3>Tu evolución</h3>';
@@ -351,6 +391,15 @@ function renderHome() {
   document.getElementById('app-content').innerHTML = html;
   wireHomeInstallBanner();
   wireHomeBackupBanner();
+
+  var homeAvisoSkipBtn = document.getElementById('home-aviso-skip-btn');
+  if (homeAvisoSkipBtn) {
+    homeAvisoSkipBtn.addEventListener('click', function () {
+      ocultarAvisoInicio();
+      var card = document.getElementById('home-aviso-card');
+      if (card) { card.hidden = true; }
+    });
+  }
 
   if (entries.length >= 2) {
     var canvas = document.getElementById('home-evolution-canvas');
@@ -723,6 +772,14 @@ function renderEjercicios() {
   html += '<summary>' + escapeHtml(GUIDE_CONTENT.ejercicioE3.titulo) + '</summary>';
   html += '<div id="ejercicio-e3-content">' + ejercicioE3Html() + '</div>';
   html += '</details>';
+
+  // Paso 17j: enlace a Recordatorios con el mismo estilo de tarjeta que
+  // los ejercicios de arriba -- aqui no se despliega en el sitio (no es un
+  // "details"), lleva directamente a la pantalla de Recordatorios.
+  html += '<a class="exercise-card" href="#/recordatorios">';
+  html += '<h3>Recordatorios</h3>';
+  html += '<p>Activa un aviso diario o pon una alarma en tu Reloj.</p>';
+  html += '</a>';
 
   html += '<p class="chapter-end-msg"><a href="#/guia">Leer la guía</a></p>';
 
@@ -2514,7 +2571,7 @@ function renderPrivacy() {
   html += '<p>Lo mismo ocurre con "Pequeño paso de hoy" (si hoy te ha pasado algo o no, dentro de Mi día): se guarda solo en este móvil, y se incluye igual en la exportación, la importación y el borrado de datos.</p>';
   html += '<p>Las etiquetas opcionales que añadas a un registro (por ejemplo "Dormí mal" o "Pude descansar") se guardan junto a ese registro, solo en este móvil, con el mismo tratamiento que el resto de tus datos.</p>';
   html += '<p>Lo mismo ocurre con lo que eliges cada día en Mi día, lo que marcas al cerrar el día, las cosas que añades tú misma a las listas y el capítulo de la guía por el que vas: se guarda solo en este móvil, y se incluye igual en la exportación, la importación y el borrado de datos.</p>';
-  html += '<p>Tus preferencias de <a href="#/recordatorios">Recordatorios</a> -- si activaste el aviso diario, la franja que elegiste, y las horas que pusiste en los selectores de la alarma manual de tu Reloj -- también se guardan solo en este móvil, para que no tengas que volver a elegirlas cada vez. Al ser preferencias de la interfaz y no datos de energía, no se incluyen en la exportación ni la importación de la copia de seguridad.</p>';
+  html += '<p>Tus preferencias de <a href="#/recordatorios">Recordatorios</a> -- si activaste el aviso diario, la franja que elegiste, y las horas que pusiste en los selectores de la alarma manual de tu Reloj -- también se guardan solo en este móvil, para que no tengas que volver a elegirlas cada vez. Lo mismo ocurre si tocas "Ahora no" en la tarjeta del aviso diario de Inicio: solo se guarda en este móvil que ya la cerraste, para no volver a mostrártela. Al ser preferencias de la interfaz y no datos de energía, no se incluyen en la exportación ni la importación de la copia de seguridad.</p>';
 
   html += '<h2>Qué no recogemos</h2>';
   html += '<p>No te pedimos nombre, correo ni ubicación para usar la app. No usamos herramientas de analítica ' +
