@@ -2108,10 +2108,14 @@ function conTiempoLimite(promesa, ms) {
 // Va arriba de las alarmas manuales porque es la opción recomendada; las
 // alarmas manuales siguen debajo como alternativa para quien no la active.
 function avisoDiarioHtml(prefs) {
+  // Paso 17h: la etiqueta principal es solo "Mañana"/"Tarde"/"Noche" --
+  // la hora exacta va debajo, en texto más suave, para no competir con
+  // los relojes de la alarma manual de más abajo. Los valores reales de
+  // franja (f.id) y las horas de envío no cambian, solo cómo se muestran.
   var franjas = [
-    { id: 'manana', label: 'Mañana (9:00)' },
-    { id: 'tarde', label: 'Tarde (18:00)' },
-    { id: 'noche', label: 'Noche (21:00)' }
+    { id: 'manana', principal: 'Mañana', hora: 'a partir de las 9:00' },
+    { id: 'tarde', principal: 'Tarde', hora: 'a partir de las 18:00' },
+    { id: 'noche', principal: 'Noche', hora: 'a partir de las 21:00' }
   ];
 
   var html = '<h2>Aviso diario (opcional)</h2>';
@@ -2131,7 +2135,10 @@ function avisoDiarioHtml(prefs) {
     var checked = prefs.franja === f.id ? ' checked' : '';
     html += '<li class="aviso-franja-row">';
     html += '<input type="radio" id="aviso-franja-' + f.id + '" name="aviso-franja" value="' + f.id + '"' + checked + '>';
-    html += '<label for="aviso-franja-' + f.id + '">' + escapeHtml(f.label) + '</label>';
+    html += '<label for="aviso-franja-' + f.id + '" class="aviso-franja-label">';
+    html += '<span class="aviso-franja-principal">' + escapeHtml(f.principal) + '</span>';
+    html += '<span class="aviso-franja-hora">' + escapeHtml(f.hora) + '</span>';
+    html += '</label>';
     html += '</li>';
   });
   html += '</ul>';
@@ -2161,12 +2168,19 @@ function avisoDiarioHtml(prefs) {
 // franja) con las preferencias actuales, sin tocar el resto de la
 // pantalla de Recordatorios -- en particular, sin tocar los selectores de
 // hora de la alarma manual (paso 17g: antes, un renderRecordatorios()
-// completo los hacía perder cualquier cambio sin guardar).
+// completo los hacía perder cualquier cambio sin guardar). Paso 17h:
+// además, abre o cierra el desplegable "Prefiero una alarma en mi Reloj
+// (alternativa)" según si el aviso quedó activo -- solo cambia su
+// atributo "open", nunca su contenido, así que los selectores de hora de
+// dentro siguen intactos.
 function actualizarAvisoZona() {
   var zona = document.getElementById('aviso-diario-zona');
   if (!zona) { return; }
-  zona.innerHTML = avisoDiarioHtml(getRecordatorioPrefs());
+  var prefs = getRecordatorioPrefs();
+  zona.innerHTML = avisoDiarioHtml(prefs);
   wireAvisoDiario();
+  var alarmaAlt = document.getElementById('recordatorio-alarma-alt');
+  if (alarmaAlt) { alarmaAlt.open = !prefs.activo; }
 }
 
 // Conecta los controles del "Aviso diario" (paso 17a): franja elegida y
@@ -2333,13 +2347,16 @@ function horaSelectsHtml(idPrefix, hora, ariaHoraLabel, ariaMinutoLabel) {
 }
 
 // HTML de la pantalla de Recordatorios (step-15, ampliada en paso 17a,
-// 17e y 17g). Las horas de las alarmas manuales ahora se recuerdan (paso
-// 17g, ver getAlarmaManualHoras() en storage.js) -- "morning"/"night"
-// llegan ya leídas de ahí, no hardcodeadas. Sigue sin copiarse aquí la
-// hora del aviso diario -- son dos cosas distintas y no hay que
-// mezclarlas sin que la persona lo pida claramente. El botón de .ics solo
-// se muestra donde puede funcionar (Android y Safari normal); dentro de
-// la app instalada en iPhone (standalone) se omite, porque WebKit bloquea
+// 17e, 17g y 17h). Las horas de las alarmas manuales ahora se recuerdan
+// (paso 17g, ver getAlarmaManualHoras() en storage.js) -- "morning"/
+// "night" llegan ya leídas de ahí, no hardcodeadas. Sigue sin copiarse
+// aquí la hora del aviso diario -- son dos cosas distintas y no hay que
+// mezclarlas sin que la persona lo pida claramente. Paso 17h: los
+// selectores de hora y su explicación viven siempre dentro del
+// desplegable "alternativa", para no mostrar dos juegos de horas a la
+// vez junto a las opciones del aviso de arriba. El botón de .ics solo se
+// muestra donde puede funcionar (Android y Safari normal); dentro de la
+// app instalada en iPhone (standalone) se omite, porque WebKit bloquea
 // esa descarga en modo standalone.
 function recordatoriosHtml(morning, night, showIcsSection, isIOS, isStandalone, prefs) {
   var html = '<h1>Recordatorios</h1>';
@@ -2349,22 +2366,22 @@ function recordatoriosHtml(morning, night, showIcsSection, isIOS, isStandalone, 
   // la alarma manual de más abajo.
   html += '<div id="aviso-diario-zona">' + avisoDiarioHtml(prefs) + '</div>';
 
-  html += '<div class="callout"><p>Los relojes de aquí abajo no crean ninguna alarma por sí solos: solo ' +
-    'rellenan el texto de los pasos para que no tengas que escribir la hora a mano. La alarma de verdad se ' +
-    'crea en la app Reloj de tu móvil, siguiendo esos pasos. No hay rachas ni aviso de la app si te lo saltas ' +
-    'algún día. Estas horas no cambian la hora del aviso diario de arriba, que es fija según la franja que ' +
-    'elegiste (9:00, 18:00 o 21:00).</p></div>';
+  // Paso 17h: el cuadro, los selectores y los pasos de la alarma manual
+  // van todos dentro de este desplegable -- no se repiten las horas del
+  // aviso, que ya se ven arriba junto a cada franja.
+  var alarmaManualHtml = '<div class="callout"><p>Estos relojes solo rellenan los pasos de abajo para que no ' +
+    'escribas la hora a mano. La alarma de verdad se crea en la app Reloj de tu móvil.</p></div>';
 
-  html += '<div class="recordatorio-field">';
-  html += '<p class="exercise-label">Por la mañana: registrar mi energía y elegir mi día</p>';
-  html += horaSelectsHtml('recordatorio-manana-hora', morning, 'Hora de la alarma de la mañana', 'Minutos de la alarma de la mañana');
-  html += '</div>';
-  html += '<div class="recordatorio-field">';
-  html += '<p class="exercise-label">Por la noche: cerrar el día</p>';
-  html += horaSelectsHtml('recordatorio-noche-hora', night, 'Hora de la alarma de la noche', 'Minutos de la alarma de la noche');
-  html += '</div>';
+  alarmaManualHtml += '<div class="recordatorio-field">';
+  alarmaManualHtml += '<p class="exercise-label">Por la mañana: registrar mi energía y elegir mi día</p>';
+  alarmaManualHtml += horaSelectsHtml('recordatorio-manana-hora', morning, 'Hora de la alarma de la mañana', 'Minutos de la alarma de la mañana');
+  alarmaManualHtml += '</div>';
+  alarmaManualHtml += '<div class="recordatorio-field">';
+  alarmaManualHtml += '<p class="exercise-label">Por la noche: cerrar el día</p>';
+  alarmaManualHtml += horaSelectsHtml('recordatorio-noche-hora', night, 'Hora de la alarma de la noche', 'Minutos de la alarma de la noche');
+  alarmaManualHtml += '</div>';
 
-  var alarmaManualHtml = '<p>Esta es la forma que funciona siempre, en cualquier teléfono: una alarma diaria normal, con un nombre que te recuerde qué tocaba.</p>';
+  alarmaManualHtml += '<p>Esta es la forma que funciona siempre, en cualquier teléfono: una alarma diaria normal, con un nombre que te recuerde qué tocaba.</p>';
 
   alarmaManualHtml += '<details class="platform-details"' + (isIOS ? ' open' : '') + '>';
   alarmaManualHtml += '<summary>En iPhone (con la app Reloj)</summary>';
@@ -2392,18 +2409,13 @@ function recordatoriosHtml(morning, night, showIcsSection, isIOS, isStandalone, 
   alarmaManualHtml += '</ol>';
   alarmaManualHtml += '</details>';
 
-  if (prefs.activo) {
-    // Paso 17e: con el aviso ya activado, la alarma manual es una
-    // alternativa secundaria -- se pliega para no repetir dos avisos a la
-    // vista a la vez. Sigue disponible igual, solo que hay que abrirla.
-    html += '<details class="platform-details" id="recordatorio-alarma-alt">';
-    html += '<summary>Prefiero una alarma en mi Reloj (alternativa)</summary>';
-    html += alarmaManualHtml;
-    html += '</details>';
-  } else {
-    html += '<h2>Pon una alarma en tu móvil</h2>';
-    html += alarmaManualHtml;
-  }
+  // Paso 17e/17h: con el aviso ya activado, la alarma manual es una
+  // alternativa secundaria -- se pliega para no repetir dos juegos de
+  // horas a la vez. Sin aviso activado, se abre por defecto como antes.
+  html += '<details class="platform-details" id="recordatorio-alarma-alt"' + (prefs.activo ? '' : ' open') + '>';
+  html += '<summary>Prefiero una alarma en mi Reloj (alternativa)</summary>';
+  html += alarmaManualHtml;
+  html += '</details>';
 
   if (showIcsSection) {
     html += '<h2>Alternativa: archivo para el calendario (experimental)</h2>';

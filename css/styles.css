@@ -867,6 +867,24 @@ footer a {
   flex-shrink: 0;
 }
 
+/* Paso 17h: etiqueta principal ("Mañana"/"Tarde"/"Noche") + hora en
+   texto más suave debajo, para no competir con los relojes de la
+   alarma manual de más abajo. */
+.aviso-franja-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.aviso-franja-principal {
+  font-weight: 600;
+}
+
+.aviso-franja-hora {
+  font-weight: 400;
+  color: var(--color-text-secondary);
+}
+
 .aviso-estado {
   font-weight: 600;
   color: var(--color-dark-text);
