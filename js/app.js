@@ -65,6 +65,9 @@ function router() {
       case '/privacidad':
         renderPrivacy();
         break;
+      case '/quien':
+        renderAbout();
+        break;
       default:
         renderHome();
     }

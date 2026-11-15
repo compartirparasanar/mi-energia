@@ -429,6 +429,31 @@ function ocultarAvisoInicio() {
   localStorage.setItem(AVISO_INICIO_OCULTO_KEY, '1');
 }
 
+// Paso 25: dos marcas de la interfaz, un solo booleano cada una, igual
+// que AVISO_INICIO_OCULTO_KEY: que ya se vio la bienvenida de la primera
+// vez, y que la persona prefirio seguir en Safari (para no repetirle el
+// aviso de instalar en iPhone). No son datos de energia: no se envian a
+// ningun sitio, no van en la copia de seguridad y no se borran con
+// "Borrar todos mis datos" (asi la bienvenida no reaparece).
+var BIENVENIDA_VISTA_KEY = 'mi-energia-bienvenida-vista';
+var AVISO_INSTALAR_IOS_OCULTO_KEY = 'mi-energia-aviso-instalar-ios-oculto';
+
+function hasSeenBienvenida() {
+  return localStorage.getItem(BIENVENIDA_VISTA_KEY) === '1';
+}
+
+function markBienvenidaSeen() {
+  try { localStorage.setItem(BIENVENIDA_VISTA_KEY, '1'); } catch (e) { /* sin espacio: no pasa nada */ }
+}
+
+function hasOcultadoAvisoInstalarIOS() {
+  return localStorage.getItem(AVISO_INSTALAR_IOS_OCULTO_KEY) === '1';
+}
+
+function ocultarAvisoInstalarIOS() {
+  try { localStorage.setItem(AVISO_INSTALAR_IOS_OCULTO_KEY, '1'); } catch (e) { /* sin espacio: no pasa nada */ }
+}
+
 // Comprueba recursivamente que un valor de respuesta de ejercicio es solo
 // texto, booleano o un objeto anidado de esos mismos tipos (como los dias
 // del Ejercicio 2.1, que guardan {nivel, nota} por cada dia).

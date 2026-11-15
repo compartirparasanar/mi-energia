@@ -35,6 +35,25 @@ function isIOSDevice() {
 // (data-item="..."), y una cosa añadida a mano con comillas -- Leer "El
 // Quijote" -- cortaba el atributo: el chip no se podia marcar y el texto
 // salia recortado.
+// Paso 25: version visible en Mis datos, para saber cual tiene cada
+// persona cuando cuenta un problema. OJO: hay que subirla A LA VEZ que
+// CACHE_VERSION en service-worker.js (son el mismo numero).
+var APP_VERSION = '37';
+
+// Paso 25: los dos unicos enlaces que salen de la app (se abren fuera, en
+// el navegador; no cargan nada dentro de la app). El formulario de opinion
+// es voluntario; la guia es la pagina de «Menos Fatiga, Más Vida».
+var FEEDBACK_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSfv_VDeE2eWSexqUklMOUwEalciv6AtdsvSrEVk4m8sB6Klxg/viewform';
+var GUIDE_URL = 'https://tinyurl.com/guia-compartir';
+
+// Enlace que se abre fuera de la app (pestaña nueva, rel noopener). Un
+// lector de pantalla lo avisa con un texto oculto a la vista.
+function externalLinkHtml(url, text, cssClass) {
+  return '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer"' +
+    (cssClass ? ' class="' + cssClass + '"' : '') + '>' + escapeHtml(text) +
+    '<span class="visually-hidden"> (se abre fuera de la app)</span></a>';
+}
+
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -57,7 +76,8 @@ var ROUTE_TITLES = {
   '/mis-datos': 'Mis datos',
   '/instalar': 'Instalar la app',
   '/recordatorios': 'Recordatorios',
-  '/privacidad': 'Privacidad'
+  '/privacidad': 'Privacidad',
+  '/quien': 'Quién hay detrás'
 };
 
 function updateDocumentTitle(hash) {
@@ -466,9 +486,70 @@ function refreshHomeAfterLog() {
   if (installBanner) { installBanner.hidden = true; }
 }
 
+// Paso 25: aviso para iPhone/iPad cuando la app NO está instalada. Es lo
+// primero que se ve en Inicio (y en la bienvenida), porque en iPhone la
+// app instalada no comparte datos con Safari: quien registre en Safari y
+// la instale después empieza de cero. Nunca aparece dentro de la app
+// instalada. "Seguir en Safari" lo oculta para siempre en este navegador.
+function shouldShowIosInstallNotice() {
+  return isIOSDevice() && !isStandaloneDisplay() && !hasOcultadoAvisoInstalarIOS();
+}
+
+function iosInstallNoticeHtml() {
+  var html = '<div class="callout ios-install-notice" id="ios-install-notice">';
+  html += '<p class="eyebrow">Antes de empezar, en iPhone</p>';
+  html += '<p>Instala la app antes de registrar. Si la instalas después, empieza vacía: lo que anotes en Safari no pasa a la app instalada.</p>';
+  html += '<a class="btn" href="#/instalar">Cómo instalarla</a>';
+  html += '<button type="button" class="bento-skip-link" id="ios-install-notice-skip">Prefiero seguir en Safari</button>';
+  html += '</div>';
+  return html;
+}
+
+function wireIosInstallNotice() {
+  var skip = document.getElementById('ios-install-notice-skip');
+  if (skip) {
+    skip.addEventListener('click', function () {
+      ocultarAvisoInstalarIOS();
+      document.getElementById('ios-install-notice').hidden = true;
+    });
+  }
+}
+
+// Paso 25: bienvenida de una sola pantalla, solo la primera vez que se
+// abre Inicio sin ningún dato. Se da por vista en cuanto se muestra, así
+// que nunca sale dos veces (tampoco si la persona se va a otra pestaña sin
+// tocar "Empezar").
+function renderBienvenida() {
+  var html = shouldShowIosInstallNotice() ? iosInstallNoticeHtml() : '';
+  html += '<div class="home-seal"><img src="assets/logo_b-transparente.svg" alt="Sello compartir · para · sanar" width="160" height="160"></div>';
+  html += '<p class="eyebrow">@compartir.para.sanar</p>';
+  html += '<h1>Esto es Mi Energía</h1>';
+  html += '<p>Un sitio sencillo para anotar cómo está tu energía cada día y ver tu propio ritmo con el tiempo.</p>';
+  html += '<p>Lo que anotas se queda en tu móvil. Sin cuentas.</p>';
+  html += '<p>Sin rachas ni puntos. Si un día no registras, no pasa nada.</p>';
+  html += '<p><strong>Empieza tocando cómo estás hoy.</strong></p>';
+  html += '<button type="button" class="btn" id="bienvenida-empezar">Empezar</button>';
+  document.getElementById('app-content').innerHTML = html;
+  wireIosInstallNotice();
+  document.getElementById('bienvenida-empezar').addEventListener('click', function () {
+    renderHome();
+    window.scrollTo(0, 0);
+  });
+}
+
 function renderHome() {
   var today = getTodayEntry();
   var entries = getEnergyLog();
+
+  // Paso 25: bienvenida solo la primera vez y solo sin datos. Quien ya
+  // usaba la app (tiene registros) no la ve nunca.
+  if (!hasSeenBienvenida()) {
+    markBienvenidaSeen();
+    if (entries.length === 0) {
+      renderBienvenida();
+      return;
+    }
+  }
 
   // "Bienvenida de nuevo" (step-14d): si hace 3 dias o mas que no se
   // registra nada, un saludo sin contar dias ni reprochar. Desaparece en
@@ -477,12 +558,16 @@ function renderHome() {
   var showWelcomeBack = !today && entries.length > 0 && daysSinceDate(entries[0].date) >= 3;
   var isInstalled = isStandaloneDisplay();
 
-  var html = homeGreetingHtml(showWelcomeBack);
+  // Paso 25: en iPhone sin instalar, el aviso de instalar va lo primero,
+  // por encima del saludo (ver iosInstallNoticeHtml).
+  var showIosNotice = shouldShowIosInstallNotice();
+  var html = (showIosNotice ? iosInstallNoticeHtml() : '') + homeGreetingHtml(showWelcomeBack);
 
   // Aviso discreto de "instala la app" (step-15): solo en el primer uso
   // (todavía sin ningún registro) y solo si no está instalada. Se puede
   // cerrar; no vuelve a aparecer en esta sesión aunque sigas sin instalar.
-  if (!isInstalled && entries.length === 0 && !installBannerDismissed) {
+  // En iPhone lo sustituye el aviso de arriba (paso 25), que dice más.
+  if (!isInstalled && !isIOSDevice() && entries.length === 0 && !installBannerDismissed) {
     html += homeInstallBannerHtml();
   }
 
@@ -546,8 +631,13 @@ function renderHome() {
 
   html += '<p class="home-footer">Recibes esta app por tu suscripción a @compartir.para.sanar.' +
     (isInstalled ? '' : ' <a href="#/instalar">Cómo instalar</a>') + '</p>';
+  // Paso 25: al final de Inicio, texto sencillo y discreto -- quién hay
+  // detrás y la guía completa (esta se abre fuera de la app).
+  html += '<p class="home-footer home-footer-links"><a href="#/quien">Quién hay detrás</a> ' +
+    externalLinkHtml(GUIDE_URL, 'Menos Fatiga, Más Vida: la guía completa') + '</p>';
 
   document.getElementById('app-content').innerHTML = html;
+  wireIosInstallNotice();
   wireHomeInstallBanner();
   wireHomeBackupBanner();
 
@@ -2163,6 +2253,14 @@ function renderMyData() {
 
   html += '</div>';
 
+  // Paso 25: opinión voluntaria (se abre fuera de la app), quién hay
+  // detrás y la versión, para saber cuál tiene cada persona.
+  html += '<h2>Tu opinión</h2>';
+  html += '<p>La app está en pruebas. Si te apetece, cuéntame qué te sirve y qué no. Es anónimo.</p>';
+  html += externalLinkHtml(FEEDBACK_URL, 'Cuéntame qué tal', 'btn btn-outline');
+  html += '<p class="chapter-end-msg"><a href="#/quien">Quién hay detrás</a></p>';
+  html += '<p class="app-version">Versión ' + escapeHtml(APP_VERSION) + '</p>';
+
   document.getElementById('app-content').innerHTML = html;
 
   document.getElementById('export-btn').addEventListener('click', function () {
@@ -3038,65 +3136,33 @@ function renderRecordatorios() {
   wireAvisoDiario();
 }
 
+// Paso 25: "Quién hay detrás". Texto de Ana, tal cual lo escribió.
+function renderAbout() {
+  var html = '<h1>Quién hay detrás</h1>';
+  html += '<p><strong>Hola, soy Ana.</strong></p>';
+  html += '<p>Soy la creadora de @compartir.para.sanar. Vivo con una enfermedad crónica y sé lo que es planificar el día según la energía que tienes, no la que te gustaría tener.</p>';
+  html += '<p>Hice esta app para acompañar la guía «Menos Fatiga, Más Vida»: un sitio sencillo, sin cuentas ni presión, donde anotar cómo estás y ver tu propio ritmo con el tiempo.</p>';
+  html += '<p>Está en pruebas y tu opinión me ayuda mucho.</p>';
+  html += externalLinkHtml(FEEDBACK_URL, 'Cuéntame qué tal', 'btn');
+  html += externalLinkHtml(GUIDE_URL, 'Conocer la guía', 'btn btn-outline');
+  html += '<p class="signature">@compartir.para.sanar</p>';
+  document.getElementById('app-content').innerHTML = html;
+}
+
+// Paso 25: texto definitivo de Privacidad, escrito por Ana (sustituye al
+// borrador del paso 17). El responsable y el contacto son los mismos que
+// ya figuraban. No cambies este texto sin que Ana lo pida.
 function renderPrivacy() {
   var html = '<h1>Privacidad</h1>';
-  html += '<div class="callout"><p>Todo se guarda solo en tu móvil. No sale nada de ahí, salvo que tú decidas ' +
-    'activar el aviso diario opcional de <a href="#/recordatorios">Recordatorios</a>: en ese caso, el servicio ' +
-    'que lo envía recibe los datos mínimos que necesita (lo explicamos más abajo).</p></div>';
-
-  html += '<h2>Qué se guarda</h2>';
-  html += '<p>Tus registros de energía y tus notas se guardan únicamente en este móvil, dentro del propio ' +
-    'navegador (lo que se llama "almacenamiento local"). Nunca se copian a ningún servidor nuestro ni de ' +
-    'terceros, y nunca se envían a internet -- ni siquiera si activas el aviso diario opcional, que solo manda ' +
-    'lo que se explica en la sección "Aviso diario y OneSignal" más abajo.</p>';
-  html += '<p>Los ejercicios de la guía ya no se escriben dentro de los capítulos: "Mis dos listas" y "Mi ritual mínimo" se hacen tocando desde Herramientas, y se guardan solo en este móvil igual que el resto de tus datos. Si respondiste a algún ejercicio en una versión anterior de la app, esa respuesta se conserva en este móvil y sigue incluida en la exportación, la importación y el borrado de datos.</p>';
-  html += '<p>Las marcas de las checklists (por ejemplo, la checklist diaria del Capítulo 7 o del Toolkit) también se guardan solo en este móvil, con el mismo tratamiento que el resto de tus datos.</p>';
-  html += '<p>Lo mismo ocurre con "Pequeño paso de hoy" (si hoy te ha pasado algo o no, dentro de Mi día): se guarda solo en este móvil, y se incluye igual en la exportación, la importación y el borrado de datos.</p>';
-  html += '<p>Las etiquetas opcionales que añadas a un registro (por ejemplo "Dormí mal" o "Pude descansar") se guardan junto a ese registro, solo en este móvil, con el mismo tratamiento que el resto de tus datos.</p>';
-  html += '<p>Lo mismo ocurre con lo que eliges cada día en Mi día, lo que marcas al cerrar el día, las cosas que añades tú misma a las listas y el capítulo de la guía por el que vas: se guarda solo en este móvil, y se incluye igual en la exportación, la importación y el borrado de datos.</p>';
-  html += '<p>Tus preferencias de <a href="#/recordatorios">Recordatorios</a> -- si activaste el aviso diario, las franjas que elegiste (puede ser más de una), y las horas que pusiste en los selectores de la alarma manual de tu Reloj -- también se guardan solo en este móvil, para que no tengas que volver a elegirlas cada vez. Lo mismo ocurre si tocas "Ahora no" en la tarjeta del aviso diario de Inicio: solo se guarda en este móvil que ya la cerraste, para no volver a mostrártela. Al ser preferencias de la interfaz y no datos de energía, no se incluyen en la exportación ni la importación de la copia de seguridad.</p>';
-
-  html += '<h2>Qué no recogemos</h2>';
-  html += '<p>No te pedimos nombre, correo ni ubicación para usar la app. No usamos herramientas de analítica ' +
-    'ni medimos cómo usas la app. No hay ningún servicio externo conectado por defecto: la app funciona sin ' +
-    'conexión a internet y no manda nada a ningún sitio -- salvo la única excepción del aviso diario opcional, ' +
-    'que solo actúa si tú lo activas (ver la sección siguiente).</p>';
-
-  html += '<!-- BORRADOR paso 17: pendiente de revisión de Ana y su asesor antes de publicar -->';
-  html += '<h2>Aviso diario (opcional) y el servicio que lo envía</h2>';
-  html += '<p><em>Esta sección es un borrador pendiente de revisión; todavía no es definitiva. Además, en el ' +
-    'momento de escribir esto el aviso diario todavía no envía nada: la conexión real llega en una actualización ' +
-    'posterior.</em></p>';
-  html += '<p>Si activas el aviso diario en <a href="#/recordatorios">Recordatorios</a>, un servicio externo ' +
-    'especializado en avisos (OneSignal) se encarga de enviártelo a las franjas que elijas -- puedes elegir más ' +
-    'de una. Es opcional: si no lo activas, esta sección no te afecta y no se envía nada.</p>';
-  html += '<p><strong>Qué recibe ese servicio:</strong> el sistema operativo y modelo de tu dispositivo, el ' +
-    'idioma, la zona horaria, el país aproximado (a partir de tu conexión), el estado del permiso de ' +
-    'notificaciones, un identificador técnico para poder enviarte el aviso, y una etiqueta por cada franja ' +
-    'horaria que actives (aviso_manana, aviso_tarde y/o aviso_noche). <strong>Nunca</strong> tus registros de ' +
-    'energía, tus notas, ni nada de lo demás que guarda esta app.</p>';
-  html += '<p><strong>Para qué se usa:</strong> solo para mandarte el aviso diario que tú elegiste. No se usa ' +
-    'para publicidad ni se vende a nadie.</p>';
-  html += '<p><strong>Base legal:</strong> tu consentimiento explícito, al pulsar "Activar aviso". Puedes ' +
-    'retirarlo cuando quieras pulsando "Desactivar aviso" en esa misma pantalla.</p>';
-  html += '<p><strong>Dónde se procesan estos datos:</strong> OneSignal es una empresa con sede en EEUU. Para ' +
-    'datos de personas en la Unión Europea, declara ampararse en cláusulas contractuales tipo de la UE y en el ' +
-    'marco de privacidad de datos UE-EEUU. <em>(Pendiente de confirmar con OneSignal si esto aplica igual en el ' +
-    'plan gratuito antes de publicar este texto como definitivo.)</em></p>';
-
-  html += '<h2>El único enlace externo activo: la lista de correo</h2>';
-  html += '<p>Si decides apuntarte al boletín de @compartir.para.sanar, lo harás a través de un formulario de MailerLite que abre fuera de esta app, en una página web aparte. Ese correo lo gestiona Ana directamente — esta app no tiene acceso a esa lista ni a tu dirección de correo.</p>';
-
-  html += '<h2>Cómo borrar tus datos de este móvil</h2>';
-  html += '<p>Puedes borrar todos tus registros cuando quieras desde <a href="#/mis-datos">Mis datos</a>, con el botón "Borrar todos mis datos". También puedes borrarlos desinstalando la app o borrando los datos de navegación de este sitio desde los ajustes de tu navegador o tu móvil.</p>';
-
-  html += '<h2>Cómo darte de baja del correo</h2>';
-  html += '<p>Si te apuntaste al boletín, puedes darte de baja con el enlace que aparece al final de cualquier email que recibas, o escribiendo a compartir.para.sanar@outlook.com pidiendo la baja.</p>';
-
-  html += '<h2>Responsable y contacto</h2>';
-  html += '<p>Responsable: Ana España.</p>';
-  html += '<p>Contacto: compartir.para.sanar@outlook.com</p>';
-
+  html += '<p>Mi Energía es un complemento gratuito de la guía «Menos Fatiga, Más Vida». Te explico en pocas líneas qué pasa con tus datos.</p>';
+  html += '<p><strong>Tus registros se quedan en tu móvil:</strong> lo que anotas (tu nivel de energía, notas, etiquetas, lo que haces cada día) se guarda solo en tu dispositivo. No tengo cuentas, no hay servidor propio y no puedo verlo ni recuperarlo. Si borras los datos del navegador o desinstalas la app, se pierden. Por eso puedes exportar una copia en <a href="#/mis-datos">«Mis datos»</a>.</p>';
+  html += '<p><strong>No hay rastreo:</strong> no uso analítica, anuncios ni cookies de seguimiento. Las fuentes y el resto de archivos van incluidos en la app.</p>';
+  html += '<p><strong>Aviso diario (opcional):</strong> solo si lo activas tú, usamos OneSignal para enviarte una notificación a la hora que corresponde a la franja que elijas (mañana 9:00, tarde 18:00 o noche 21:00, en tu zona horaria). Para eso OneSignal recibe un identificador de tu navegador o móvil y la franja elegida. No recibe tus registros de energía. También recibe datos técnicos de tu dispositivo: sistema operativo, modelo, idioma, zona horaria y país aproximado. Puedes desactivarlo cuando quieras en <a href="#/recordatorios">«Recordatorios»</a>, y si borras tus datos desde «Mis datos» también se da de baja.</p>';
+  html += '<p><strong>Alojamiento:</strong> la app está alojada en GitHub Pages. Como en cualquier web, el servidor puede registrar tu dirección IP al cargarla.</p>';
+  html += '<p><strong>Opinión voluntaria:</strong> el enlace «Cuéntame qué tal» abre un formulario de Google fuera de la app. Es voluntario y anónimo; no te pido nombre ni correo.</p>';
+  html += '<p><strong>Esto no es un servicio médico:</strong> la app no diagnostica ni trata ninguna enfermedad ni sustituye a tu equipo médico.</p>';
+  html += '<p><strong>Tus derechos y contacto:</strong> para cualquier duda sobre tus datos o para pedir que se elimine tu suscripción al aviso: compartir.para.sanar@outlook.com.</p>';
+  html += '<p><strong>Responsable:</strong> Ana España.</p>';
   html += '<p class="signature">@compartir.para.sanar</p>';
   document.getElementById('app-content').innerHTML = html;
 }

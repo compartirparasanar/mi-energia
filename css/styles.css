@@ -1206,6 +1206,31 @@ a.bento-card:hover, a.bento-card:focus-visible {
   margin-top: var(--space-6);
 }
 
+/* Paso 25: enlaces discretos del final de Inicio y version en Mis datos. */
+.home-footer-links {
+  margin-top: 0;
+}
+
+.home-footer-links a {
+  margin: 0 var(--space-2);
+}
+
+.app-version {
+  color: var(--color-text-secondary);
+  font-size: 1rem;
+  text-align: center;
+}
+
+/* Paso 25: aviso de instalar en iPhone (lo primero de Inicio). */
+.ios-install-notice {
+  margin-top: 0;
+}
+
+.ios-install-notice .btn {
+  margin-top: var(--space-3);
+  margin-bottom: var(--space-1);
+}
+
 .chapter-nav {
   display: flex;
   gap: var(--space-3);
