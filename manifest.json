@@ -1,6 +1,6 @@
 {
   "name": "Mi Energía",
-  "short_name": "MiEnergía",
+  "short_name": "Mi Energía",
   "id": "./index.html",
   "start_url": "./index.html",
   "scope": "./",

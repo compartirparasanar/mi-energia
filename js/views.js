@@ -31,11 +31,103 @@ function isIOSDevice() {
   return /iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
 
+// Paso 20: tambien escapa comillas. Este texto se usa dentro de atributos
+// (data-item="..."), y una cosa añadida a mano con comillas -- Leer "El
+// Quijote" -- cortaba el atributo: el chip no se podia marcar y el texto
+// salia recortado.
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Paso 20: titulo de la pestaña segun la pantalla (antes era siempre el
+// mismo, asi que un lector de pantalla no anunciaba el cambio).
+var ROUTE_TITLES = {
+  '/guia': 'Guía',
+  '/guia/toolkit': 'Tu kit de herramientas',
+  '/guia/plan-21': 'Plan de 21 días',
+  '/registro': 'Registro',
+  '/pasos': 'Mi día',
+  '/herramientas': 'Herramientas',
+  '/evolucion': 'Evolución',
+  '/mis-datos': 'Mis datos',
+  '/instalar': 'Instalar la app',
+  '/recordatorios': 'Recordatorios',
+  '/privacidad': 'Privacidad'
+};
+
+function updateDocumentTitle(hash) {
+  var name = ROUTE_TITLES[hash] || '';
+  var chapterMatch = String(hash).match(/^\/guia\/(\d+)$/);
+  if (chapterMatch) { name = 'Capítulo ' + chapterMatch[1]; }
+  document.title = (name ? name + ' — ' : '') + 'Mi Energía';
+}
+
+// Paso 20: tras navegar, la pantalla nueva empieza arriba y el foco pasa
+// al contenido, sin que el navegador haga su propio scroll al enfocar.
+function focusContentAfterNavigation() {
+  window.scrollTo(0, 0);
+  var main = document.getElementById('app-content');
+  if (main) {
+    main.setAttribute('tabindex', '-1');
+    main.focus({ preventScroll: true });
+  }
+}
+
+// Paso 23: "Saltar al contenido" apuntaba a #app-content, y como la app
+// navega con el hash, eso llevaba a Inicio. Ahora mueve el foco al
+// contenido de la pantalla actual sin cambiar de pantalla. Lo llama app.js
+// una vez al arrancar.
+function wireSkipLink() {
+  var link = document.querySelector('.skip-link');
+  var main = document.getElementById('app-content');
+  if (!link || !main) { return; }
+  link.addEventListener('click', function (e) {
+    e.preventDefault();
+    main.setAttribute('tabindex', '-1');
+    main.focus();
+  });
+}
+
+// Paso 21: aviso discreto de "hay una versión nueva", fuera de <main> para
+// que no desaparezca al cambiar de pantalla. Lo llama app.js cuando el
+// service worker nuevo toma el mando. Solo aparece una vez.
+function showUpdateBanner() {
+  if (document.getElementById('update-banner')) { return; }
+  var main = document.getElementById('app-content');
+  if (!main) { return; }
+  var banner = document.createElement('div');
+  banner.id = 'update-banner';
+  banner.className = 'update-banner';
+  banner.setAttribute('role', 'status');
+  var text = document.createElement('p');
+  text.textContent = 'Hay una versión nueva de la app.';
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn-secondary';
+  btn.textContent = 'Actualizar';
+  btn.addEventListener('click', function () {
+    location.reload();
+  });
+  banner.appendChild(text);
+  banner.appendChild(btn);
+  main.parentNode.insertBefore(banner, main);
+}
+
+// Paso 20: fecha (YYYY-MM-DD) en la que se pinto la pantalla actual, para
+// saber si el dia ha cambiado mientras la app seguia abierta.
+var renderedOnDate = null;
+
+function markRenderDate() {
+  renderedOnDate = todayDateString();
+}
+
+function hasDayChangedSinceRender() {
+  return renderedOnDate !== null && renderedOnDate !== todayDateString();
 }
 
 // Texto alternativo del gráfico de evolución para lectores de pantalla
@@ -87,18 +179,34 @@ function calloutLabelFor(line) {
 
 // Convierte un bloque de texto (lineas separadas por \n, donde las lineas que
 // empiezan con "- " son items de lista) en HTML con parrafos y listas.
+// Paso 23: las tablas "para rellenar a mano" de la guía llegan como filas
+// con celdas vacías separadas por rayas ("Lunes —  — ", " —  —  — "), que
+// en pantalla se veían como rayas sueltas. Aquí se limpia cada fila solo
+// para mostrarla (content.js no se toca): una fila sin ningún texto se
+// omite (devuelve null) y de una fila con huecos se muestran solo las
+// celdas con texto. Las filas completas se devuelven tal cual.
+function cleanTemplateRow(text) {
+  var cells = String(text).split('—').map(function (c) { return c.trim(); });
+  if (cells.length < 2) return text;
+  var filled = cells.filter(function (c) { return c !== ''; });
+  if (!filled.length) return null;
+  if (filled.length === cells.length) return text;
+  return filled.join(' — ');
+}
+
 function renderTextBlock(text) {
   var lines = String(text).split('\n');
   var html = '';
   var listBuffer = [];
 
   function flushList() {
-    if (listBuffer.length) {
-      html += '<ul>' + listBuffer.map(function (l) {
+    var rows = listBuffer.map(cleanTemplateRow).filter(function (l) { return l !== null; });
+    if (rows.length) {
+      html += '<ul>' + rows.map(function (l) {
         return '<li>' + escapeHtml(l) + '</li>';
       }).join('') + '</ul>';
-      listBuffer = [];
     }
+    listBuffer = [];
   }
 
   lines.forEach(function (line) {
@@ -255,7 +363,7 @@ function wireHomeBackupBanner() {
 // segun el nivel elegido, con el botón "Elegir mi día" hacia Mi día.
 function homeDiaSectionHtml(today) {
   var html = '<div id="home-dia-section"' + (today ? '' : ' hidden') + '>';
-  html += '<p class="eyebrow">¿Y ahora qué?</p>';
+  html += '<p class="eyebrow eyebrow-on-dark">¿Y ahora qué?</p>';
   html += '<p id="home-dia-frase" class="confirmation confirmation-on-dark" aria-live="polite">' +
     (today ? escapeHtml(GUIDE_CONTENT.miDiaFrases[today.level]) : '') + '</p>';
   html += '<a class="btn btn-on-dark" href="#/pasos">Elegir mi día</a>';
@@ -272,16 +380,22 @@ function franjaPrincipalLabel(franja) {
   return 'Mañana';
 }
 
-// Paso 17k: junta las franjas marcadas en una frase corta en español
-// ("Mañana", "Mañana y Noche", "Mañana, Tarde y Noche"), para la línea de
+// Paso 19: hora fija de envío de cada franja (igual para todo el mundo,
+// en la zona horaria de quien la recibe -- cron-job.org + OneSignal
+// mandan cada franja siempre a esta hora; la persona ya no elige una
+// hora propia). Un solo sitio para no repetir estos 3 valores en varias
+// funciones de este archivo.
+var RECORDATORIO_FRANJAS_HORAS = { manana: '9:00', tarde: '18:00', noche: '21:00' };
+
+// Paso 17k/19: junta las franjas marcadas con su hora fija en una frase
+// corta ("Mañana 9:00", "Mañana 9:00 · Noche 21:00"), para la línea de
 // estado de Inicio y de Recordatorios. Con la lista vacía devuelve ''
 // (no debería llegar a mostrarse: con 0 franjas el aviso nunca está
 // activo, ver getRecordatorioPrefs() en storage.js).
-function franjasListLabel(franjas) {
-  var etiquetas = (franjas || []).map(franjaPrincipalLabel);
-  if (etiquetas.length === 0) { return ''; }
-  if (etiquetas.length === 1) { return etiquetas[0]; }
-  return etiquetas.slice(0, -1).join(', ') + ' y ' + etiquetas[etiquetas.length - 1];
+function franjasConHoraLabel(franjas) {
+  return (franjas || []).map(function (f) {
+    return franjaPrincipalLabel(f) + ' ' + (RECORDATORIO_FRANJAS_HORAS[f] || '');
+  }).join(' · ');
 }
 
 // Tarjeta (o línea de estado) del Aviso diario en Inicio (paso 17i): hace
@@ -293,7 +407,7 @@ function franjasListLabel(franjas) {
 function homeAvisoCardHtml(prefs) {
   if (prefs.activo) {
     var html = '<div class="bento-card bento-card-wide bento-card-beige bento-aviso-status">';
-    html += '<p class="bento-aviso-status-text">Aviso activo · ' + escapeHtml(franjasListLabel(prefs.franjas)) + '</p>';
+    html += '<p class="bento-aviso-status-text">Aviso activo · ' + escapeHtml(franjasConHoraLabel(prefs.franjas)) + '</p>';
     html += '<a class="bento-skip-link" href="#/recordatorios">Cambiar</a>';
     html += '</div>';
     return html;
@@ -303,11 +417,53 @@ function homeAvisoCardHtml(prefs) {
   }
   var html = '<div class="bento-card bento-card-wide bento-card-beige" id="home-aviso-card">';
   html += '<h3>Un aviso diario, si te ayuda</h3>';
-  html += '<p>Te lo recordamos a la hora que elijas. Sin rachas ni culpa.</p>';
+  html += '<p>Por la mañana, por la tarde o por la noche. Tú eliges. Sin rachas ni culpa.</p>';
   html += '<a class="btn" href="#/recordatorios">Activar aviso</a>';
   html += '<button type="button" class="bento-skip-link" id="home-aviso-skip-btn">Ahora no</button>';
   html += '</div>';
   return html;
+}
+
+// Contenido de la tarjeta "Tu evolución" de Inicio. Extraido de renderHome
+// (paso 20) para poder repintar solo esto justo despues de registrar: antes
+// seguia diciendo "Te faltan 3 más" aunque acabaras de apuntar un dia.
+// La etiqueta dice "registros", no "días": el grafico muestra los ultimos 7
+// registros, que pueden abarcar mas de 7 dias si hay huecos.
+function homeEvolutionCardInnerHtml(entries) {
+  var html = '<div class="bento-card-header-row"><p class="eyebrow">Últimos registros</p><span class="bento-card-chevron" aria-hidden="true">›</span></div>';
+  html += '<h3>Tu evolución</h3>';
+  if (entries.length >= 2) {
+    html += '<canvas id="home-evolution-canvas"></canvas>';
+  }
+  if (entries.length < 3) {
+    html += '<p>' + escapeHtml(apunta3DiasMensaje(entries.length)) + '</p>';
+  } else if (!hasSeenResumen()) {
+    html += '<p class="evolution-ready-hint">Tu resumen está listo.</p>';
+  }
+  return html;
+}
+
+function drawHomeEvolutionChart(entries) {
+  var canvas = document.getElementById('home-evolution-canvas');
+  if (!canvas || entries.length < 2) return;
+  var homeChartEntries = entries.slice(0, 7).reverse();
+  drawEvolutionChart(canvas, homeChartEntries);
+  canvas.setAttribute('role', 'img');
+  canvas.setAttribute('aria-label', evolutionChartAriaLabel(homeChartEntries));
+}
+
+// Tras tocar un nivel en Inicio (paso 20): repinta la tarjeta de evolucion
+// con el registro nuevo y retira el aviso de "instala la app", que solo es
+// para quien todavia no tiene ningun registro.
+function refreshHomeAfterLog() {
+  var entries = getEnergyLog();
+  var card = document.getElementById('home-evolution-card');
+  if (card) {
+    card.innerHTML = homeEvolutionCardInnerHtml(entries);
+    drawHomeEvolutionChart(entries);
+  }
+  var installBanner = document.getElementById('home-install-banner');
+  if (installBanner) { installBanner.hidden = true; }
 }
 
 function renderHome() {
@@ -346,7 +502,7 @@ function renderHome() {
   ['alta', 'media', 'baja'].forEach(function (level) {
     var isSelected = !!(today && today.level === level);
     html += '<button type="button" class="level-btn' + (isSelected ? ' selected' : '') +
-      '" data-level="' + level + '" aria-pressed="' + (isSelected ? 'true' : 'false') + '">' + levelLabel(level) + '</button>';
+      '" data-level="' + level + '" aria-pressed="' + (isSelected ? 'true' : 'false') + '">' + levelLabelHtml(level) + '</button>';
   });
   html += '</div>';
   html += '</div>';
@@ -371,17 +527,8 @@ function renderHome() {
   // invisible.
   html += homeAvisoCardHtml(getRecordatorioPrefs());
 
-  html += '<a class="bento-card bento-card-wide bento-mini-chart" href="#/evolucion">';
-  html += '<div class="bento-card-header-row"><p class="eyebrow">Últimos 7 días</p><span class="bento-card-chevron" aria-hidden="true">›</span></div>';
-  html += '<h3>Tu evolución</h3>';
-  if (entries.length >= 2) {
-    html += '<canvas id="home-evolution-canvas"></canvas>';
-  }
-  if (entries.length < 3) {
-    html += '<p>' + escapeHtml(apunta3DiasMensaje(entries.length)) + '</p>';
-  } else if (!hasSeenResumen()) {
-    html += '<p class="evolution-ready-hint">Tu resumen está listo.</p>';
-  }
+  html += '<a class="bento-card bento-card-wide bento-mini-chart" id="home-evolution-card" href="#/evolucion">';
+  html += homeEvolutionCardInnerHtml(entries);
   html += '</a>';
 
   var ultimoCapitulo = getUltimoCapitulo();
@@ -413,13 +560,7 @@ function renderHome() {
     });
   }
 
-  if (entries.length >= 2) {
-    var canvas = document.getElementById('home-evolution-canvas');
-    var homeChartEntries = entries.slice(0, 7).reverse();
-    drawEvolutionChart(canvas, homeChartEntries);
-    canvas.setAttribute('role', 'img');
-    canvas.setAttribute('aria-label', evolutionChartAriaLabel(homeChartEntries));
-  }
+  drawHomeEvolutionChart(entries);
 
   var levelButtons = document.querySelectorAll('#home-level-buttons .level-btn');
   var logConfirm = document.getElementById('home-log-confirm');
@@ -440,19 +581,29 @@ function renderHome() {
       btn.setAttribute('aria-pressed', 'true');
       var level = btn.getAttribute('data-level');
       var existing = getTodayEntry();
-      saveEntry({
+      var saved = saveEntry({
         date: todayDateString(),
         level: level,
         note: existing ? existing.note : '',
         tags: existing && Array.isArray(existing.tags) ? existing.tags : []
       });
-      if (welcomeBack) welcomeBack.hidden = true;
       skipMsg.hidden = true;
+      if (!saved) {
+        // Paso 23: si el móvil no deja guardar (sin espacio, por ejemplo),
+        // se dice claramente en vez de mostrar "Guardado".
+        btn.classList.remove('selected');
+        btn.setAttribute('aria-pressed', 'false');
+        logConfirm.textContent = 'No se ha podido guardar. Inténtalo otra vez.';
+        logConfirm.hidden = false;
+        return;
+      }
+      if (welcomeBack) welcomeBack.hidden = true;
       logConfirm.textContent = 'Guardado.';
       logConfirm.hidden = false;
       extraSection.hidden = false;
       diaSection.hidden = false;
       diaFrase.textContent = GUIDE_CONTENT.miDiaFrases[level];
+      refreshHomeAfterLog();
     });
   });
 
@@ -497,6 +648,38 @@ function renderGuideIndex() {
   html += '<li><a href="#/guia/plan-21">Plan día a día (21 días)</a></li>';
   html += '</ul>';
   document.getElementById('app-content').innerHTML = html;
+}
+
+// Paso 23: lista de las cosas añadidas a mano en un grupo, cada una con su
+// botón "Quitar" (por ejemplo, para corregir una errata). Se muestra dentro
+// del campo "+ Añadir la mía", solo cuando está abierto. btnClass distingue
+// el botón de Mi día del del Ejercicio 1 (cada pantalla conecta el suyo).
+function misCosasQuitarHtml(group, propias, btnClass) {
+  if (!propias || !propias.length) return '';
+  var html = '<p class="exercise-label mis-cosas-titulo">Las que añadiste tú</p>';
+  html += '<ul class="mis-cosas-list">';
+  propias.forEach(function (item) {
+    html += '<li><span>' + escapeHtml(item) + '</span>';
+    html += '<button type="button" class="btn btn-secondary ' + btnClass + '" data-group="' + group +
+      '" data-item="' + escapeHtml(item) + '" aria-label="Quitar ' + escapeHtml(item) + '">Quitar</button></li>';
+  });
+  html += '</ul>';
+  return html;
+}
+
+// Quita una cosa añadida a mano de todos los sitios donde aparece: la
+// lista propia, lo elegido hoy en Mi día y lo marcado en el Ejercicio 1.
+// Los días anteriores no se tocan (lo que se hizo, hecho está).
+function quitarMiCosaDeTodo(group, label) {
+  removeMiCosa(group, label);
+  var today = todayDateString();
+  var chosen = getMiDiaForDate(today).chosen.filter(function (c) { return c !== label; });
+  setMiDiaChosen(today, chosen);
+  var e1 = getExerciseAnswers('ex-3-1');
+  if (e1 && Array.isArray(e1[group])) {
+    e1[group] = e1[group].filter(function (c) { return c !== label; });
+    saveExerciseAnswers('ex-3-1', e1);
+  }
 }
 
 // HTML del Ejercicio 1 ("Mis dos listas"): dos pantallas de chips tocables.
@@ -544,6 +727,7 @@ function ejercicioE1BodyHtml(group, saved, addFieldOpen) {
   html += '<input type="text" class="exercise-input ejercicio-e1-add-input" data-mis-cosas-group="' + group + '" data-answer-key="' + answerKey + '" placeholder="Añadir la mía">';
   html += '<button type="button" class="btn btn-secondary ejercicio-e1-add-btn" data-mis-cosas-group="' + group + '" data-answer-key="' + answerKey + '">Añadir</button>';
   html += '<button type="button" class="btn btn-secondary ejercicio-e1-add-done" data-mis-cosas-group="' + group + '">Listo</button>';
+  html += misCosasQuitarHtml(group, misCosas[group], 'ejercicio-e1-quitar');
   html += '</div>';
   html += '</div>';
   return html;
@@ -617,6 +801,14 @@ function wireEjercicioE1(container) {
     });
   });
 
+  container.querySelectorAll('.ejercicio-e1-quitar').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var group = btn.getAttribute('data-group');
+      quitarMiCosaDeTodo(group, btn.getAttribute('data-item'));
+      refreshEjercicioE1Body(group, true);
+    });
+  });
+
   container.querySelectorAll('.ejercicio-e1-add-done').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var group = btn.getAttribute('data-mis-cosas-group');
@@ -644,9 +836,25 @@ function refreshEjercicioE1Body(group, addFieldOpen) {
 // HTML del Ejercicio 2 ("Mi ritual mínimo"): un momento del día y hasta 3
 // pasos tocados de la lista del autor. Sin límite forzado: la propia
 // instrucción ("toca 3 pasos") ya guía cuántos elegir.
+// Paso 23: una opción del ritual cambió de texto ("sentado/a" -> forma
+// neutra). Quien ya la tuviera elegida la conserva: al leer lo guardado se
+// traduce el texto antiguo al nuevo (y queda guardado así en el siguiente
+// toque).
+var EJERCICIO_E2_RENOMBRADOS = {
+  'Café tranquilo, sentado/a, 5 min antes del móvil': 'Café tranquilo, 5 min sin prisa antes del móvil'
+};
+
+function ejercicioE2Guardado() {
+  var saved = getExerciseAnswers('ex-5-1') || { momento: '', pasos: [] };
+  var pasos = Array.isArray(saved.pasos) ? saved.pasos.map(function (p) {
+    return EJERCICIO_E2_RENOMBRADOS[p] || p;
+  }) : [];
+  return { momento: saved.momento || '', pasos: pasos };
+}
+
 function ejercicioE2Html() {
   var cfg = GUIDE_CONTENT.ejercicioE2;
-  var saved = getExerciseAnswers('ex-5-1') || { momento: '', pasos: [] };
+  var saved = ejercicioE2Guardado();
   var html = '';
   html += '<p class="exercise-label">' + escapeHtml(cfg.intro1) + '</p>';
   html += '<div class="tag-chips" id="ejercicio-e2-momento">';
@@ -676,7 +884,7 @@ function wireEjercicioE2() {
   }
   document.querySelectorAll('.ejercicio-e2-momento-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      var saved = getExerciseAnswers('ex-5-1') || { momento: '', pasos: [] };
+      var saved = ejercicioE2Guardado();
       document.querySelectorAll('.ejercicio-e2-momento-btn').forEach(function (b) { b.classList.remove('selected'); b.setAttribute('aria-pressed', 'false'); });
       btn.classList.add('selected');
       btn.setAttribute('aria-pressed', 'true');
@@ -685,7 +893,7 @@ function wireEjercicioE2() {
   });
   document.querySelectorAll('.ejercicio-e2-paso-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      var saved = getExerciseAnswers('ex-5-1') || { momento: '', pasos: [] };
+      var saved = ejercicioE2Guardado();
       var pasos = Array.isArray(saved.pasos) ? saved.pasos.slice() : [];
       var paso = btn.getAttribute('data-paso');
       var idx = pasos.indexOf(paso);
@@ -703,11 +911,11 @@ function ejercicioE3Html() {
   cfg.preguntas.forEach(function (pregunta, i) {
     html += '<p class="paso-question">' + escapeHtml(pregunta) + '</p>';
     html += '<div class="confirm-buttons ejercicio-e3-pregunta" data-index="' + i + '">';
-    html += '<button type="button" class="btn ejercicio-e3-si" data-index="' + i + '">Sí</button>';
-    html += '<button type="button" class="btn btn-secondary ejercicio-e3-no" data-index="' + i + '">No</button>';
+    html += '<button type="button" class="btn btn-secondary ejercicio-e3-si" data-index="' + i + '" aria-pressed="false">Sí</button>';
+    html += '<button type="button" class="btn btn-secondary ejercicio-e3-no" data-index="' + i + '" aria-pressed="false">No</button>';
     html += '</div>';
   });
-  html += '<div id="ejercicio-e3-resultado" hidden>';
+  html += '<div id="ejercicio-e3-resultado" aria-live="polite" hidden>';
   html += '<p class="confirmation">' + escapeHtml(cfg.resultadoIntro) + '</p>';
   cfg.frases.forEach(function (frase, i) {
     html += '<p class="ejercicio-e3-frase">' + escapeHtml(frase) +
@@ -733,6 +941,9 @@ function wireEjercicioE3() {
     respuestas[index] = valor;
     siBtn.classList.toggle('selected', valor === true);
     noBtn.classList.toggle('selected', valor === false);
+    // Paso 23: el estado también se dice a los lectores de pantalla.
+    siBtn.setAttribute('aria-pressed', valor === true ? 'true' : 'false');
+    noBtn.setAttribute('aria-pressed', valor === false ? 'true' : 'false');
     var answeredCount = Object.keys(respuestas).length;
     if (answeredCount < 3) { resultado.hidden = true; todoBien.hidden = true; return; }
     var algunDispara = Object.keys(respuestas).some(function (k) {
@@ -933,7 +1144,8 @@ function renderToolkit() {
   [GUIDE_CONTENT.toolkit.fatigueLog, GUIDE_CONTENT.toolkit.energyMap].forEach(function (tool) {
     html += '<div class="card"><h2>' + escapeHtml(tool.title) + '</h2><ul>';
     tool.items.forEach(function (item) {
-      html += '<li>' + escapeHtml(item) + '</li>';
+      var row = cleanTemplateRow(item);
+      if (row !== null) { html += '<li>' + escapeHtml(row) + '</li>'; }
     });
     html += '</ul></div>';
   });
@@ -1061,6 +1273,7 @@ function miDiaGroupBodyHtml(groupKey, chosen, misCosas, addFieldOpen) {
   html += '<input type="text" class="exercise-input mi-dia-add-input" data-group="' + groupKey + '" placeholder="Añadir la mía">';
   html += '<button type="button" class="btn btn-secondary mi-dia-add-btn" data-group="' + groupKey + '">Añadir</button>';
   html += '<button type="button" class="btn btn-secondary mi-dia-add-done" data-group="' + groupKey + '">Listo</button>';
+  html += misCosasQuitarHtml(groupKey, misCosas[groupKey], 'mi-dia-quitar');
   html += '</div>';
   html += '</div>';
   return html;
@@ -1245,6 +1458,15 @@ function wireMiDiaAddForms(container) {
     });
   });
 
+  container.querySelectorAll('.mi-dia-quitar').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var group = btn.getAttribute('data-group');
+      quitarMiCosaDeTodo(group, btn.getAttribute('data-item'));
+      refreshMiDiaGroupBody(group, true);
+      refreshCerrarElDia();
+    });
+  });
+
   container.querySelectorAll('.mi-dia-add-done').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var group = btn.getAttribute('data-group');
@@ -1398,7 +1620,11 @@ function renderActionPlan() {
   html += '<h1>Plan de acción de 21 días</h1>';
   GUIDE_CONTENT.actionPlan.weeks.forEach(function (week) {
     html += '<h2>' + escapeHtml(week.name) + '</h2>';
-    html += '<div class="callout"><p class="eyebrow">OBJETIVO DE LA SEMANA</p><p>' + escapeHtml(week.objective) + '</p></div>';
+    // Paso 23: el texto ya empieza por "Objetivo de la semana:" y la
+    // etiqueta de arriba dice lo mismo -- se quita del texto al mostrarlo.
+    var objetivo = String(week.objective).replace(/^Objetivo de la semana:\s*/, '');
+    objetivo = objetivo.charAt(0).toUpperCase() + objetivo.slice(1);
+    html += '<div class="callout"><p class="eyebrow">Objetivo de la semana</p><p>' + escapeHtml(objetivo) + '</p></div>';
     html += '<details class="inline-details">';
     html += '<summary>Ver día a día</summary>';
     html += '<div class="plan-week">';
@@ -1414,10 +1640,23 @@ function renderActionPlan() {
 }
 
 function levelLabel(level) {
-  if (level === 'alta') return '🟢 Alta';
-  if (level === 'media') return '🟡 Media';
-  if (level === 'baja') return '🔴 Baja';
+  if (level === 'alta') return 'Alta';
+  if (level === 'media') return 'Media';
+  if (level === 'baja') return 'Baja';
   return level;
+}
+
+// Paso 24: indicador de nivel dibujado con CSS (sin emojis): un circulo
+// por nivel que recuerda al semaforo de la guia, en tonos suaves de la
+// paleta y con relleno distinto -- lleno (alta), medio (media), vacio
+// (baja) -- para que el nivel no dependa solo del color. Es decorativo
+// (aria-hidden): la etiqueta de texto va siempre al lado, y un lector de
+// pantalla lee solo la palabra ("Alta").
+function levelLabelHtml(level) {
+  var known = level === 'alta' || level === 'media' || level === 'baja';
+  var html = known ? '<span class="level-indicator level-indicator-' + level + '" aria-hidden="true"></span>' : '';
+  html += '<span class="level-text">' + escapeHtml(levelLabel(level)) + '</span>';
+  return html;
 }
 
 function levelBadgeClass(level) {
@@ -1465,7 +1704,7 @@ function renderLog() {
   ['alta', 'media', 'baja'].forEach(function (level) {
     var isSelected = level === selectedLevel;
     html += '<button type="button" class="level-btn' + (isSelected ? ' selected' : '') +
-      '" data-level="' + level + '" aria-pressed="' + (isSelected ? 'true' : 'false') + '">' + levelLabel(level) + '</button>';
+      '" data-level="' + level + '" aria-pressed="' + (isSelected ? 'true' : 'false') + '">' + levelLabelHtml(level) + '</button>';
   });
   html += '</div>';
   html += '<input type="hidden" id="log-level" value="' + escapeHtml(selectedLevel) + '">';
@@ -1486,7 +1725,7 @@ function renderLog() {
     html += '<ul class="log-list">';
     entries.forEach(function (entry) {
       html += '<li><span class="badge ' + levelBadgeClass(entry.level) + '">' +
-        escapeHtml(levelLabel(entry.level)) + '</span> ' +
+        levelLabelHtml(entry.level) + '</span> ' +
         '<span class="log-date">' + escapeHtml(formatShortDate(entry.date)) + '</span>';
       if (entry.note) {
         html += '<p class="log-note">' + escapeHtml(entry.note) + '</p>';
@@ -1572,8 +1811,10 @@ function buildEvolutionSummary(entries) {
       break;
     }
   }
+  // Paso 20: antes decia "Tu mejor día", pero solo es el ultimo dia en
+  // alta -- se dice tal cual, sin comparar unos dias con otros.
   if (bestDay) {
-    lines.push('Tu mejor día hasta ahora fue el ' + formatShortDate(bestDay.date) + '.');
+    lines.push('Tu último día con energía alta fue el ' + formatShortDate(bestDay.date) + '.');
   }
 
   if (total >= 7) {
@@ -1588,7 +1829,12 @@ function buildEvolutionSummary(entries) {
         weekCounts[e.level] = (weekCounts[e.level] || 0) + 1;
       }
     });
-    lines.push('Esta semana: ' + weekCounts.alta + ' días altos, ' + weekCounts.media + ' medios, ' + weekCounts.baja + ' bajos');
+    // Paso 20: "últimos 7 días" (es lo que se cuenta, no la semana de
+    // calendario) y singular cuando toca ("1 día alto", no "1 días altos").
+    lines.push('En los últimos 7 días: ' +
+      weekCounts.alta + (weekCounts.alta === 1 ? ' día alto, ' : ' días altos, ') +
+      weekCounts.media + (weekCounts.media === 1 ? ' medio y ' : ' medios y ') +
+      weekCounts.baja + (weekCounts.baja === 1 ? ' bajo.' : ' bajos.'));
   }
 
   if (total >= 14) {
@@ -1605,17 +1851,114 @@ function buildEvolutionSummary(entries) {
         var avgWith = withTag.reduce(function (a, b) { return a + b; }, 0) / withTag.length;
         var avgWithout = withoutTag.reduce(function (a, b) { return a + b; }, 0) / withoutTag.length;
         if (avgWith < avgWithout) {
-          tagLine = 'Parece que los días con ' + tag + ' tu energía fue más baja.';
+          tagLine = 'Parece que los días con la etiqueta "' + tag + '" tu energía fue más baja.';
         } else if (avgWith > avgWithout) {
-          tagLine = 'Parece que los días con ' + tag + ' tu energía fue más alta.';
+          tagLine = 'Parece que los días con la etiqueta "' + tag + '" tu energía fue más alta.';
         }
         if (tagLine) break;
       }
     }
-    lines.push(tagLine || 'Todavía son pocos días para sacar conclusiones.');
+    // Paso 20: antes decia siempre "Todavía son pocos días...", tambien
+    // con muchos dias registrados. Lo que falta no son dias sino
+    // etiquetas, asi que se dice eso (o que aun no se ve nada claro).
+    var hayEtiquetas = entries.some(function (e) {
+      return Array.isArray(e.tags) && e.tags.length > 0;
+    });
+    lines.push(tagLine || (hayEtiquetas ?
+      'Con tus etiquetas todavía no se ve nada claro. No pasa nada.' :
+      'Si quieres, toca un día del historial y añade una etiqueta. Con el tiempo verás si algo se repite.'));
   }
 
   return lines;
+}
+
+var LOG_WEEKDAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+// Paso 23: días de los últimos 30 (de ayer hacia atrás) que no tienen
+// registro, para "Añadir un día que se te pasó". Nunca incluye hoy (eso se
+// hace en Inicio) ni fechas futuras, ni días que ya tienen registro (esos
+// se editan tocándolos en el historial).
+function evolutionMissingDays(entries) {
+  var have = {};
+  entries.forEach(function (e) { have[e.date] = true; });
+  var parts = todayDateString().split('-').map(Number);
+  var days = [];
+  for (var i = 1; i <= 30; i++) {
+    var d = new Date(parts[0], parts[1] - 1, parts[2] - i);
+    var iso = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    if (!have[iso]) {
+      days.push({
+        date: iso,
+        label: (i === 1 ? 'Ayer, ' : '') + LOG_WEEKDAY_NAMES[d.getDay()] + ' ' + formatDisplayDate(iso)
+      });
+    }
+  }
+  return days;
+}
+
+// Desplegable "Añadir un día que se te pasó" de Evolución (paso 23): un
+// selector con los días sin registro y los tres niveles. Se usa una lista
+// de días en vez de un calendario nativo porque así no se puede elegir una
+// fecha futura ni repetir un día, y porque los campos de fecha/hora nativos
+// ya dieron problemas de ancho en el iPhone instalado (ver paso 17e).
+function evolutionAddDayHtml(entries) {
+  var days = evolutionMissingDays(entries);
+  if (!days.length) return '';
+  var html = '<details class="inline-details evolution-add-day" id="evolution-add-day">';
+  html += '<summary>Añadir un día que se te pasó</summary>';
+  html += '<label for="evolution-add-date" class="exercise-label">¿Qué día?</label>';
+  html += '<select id="evolution-add-date" class="recordatorio-hora-select evolution-add-select">';
+  days.forEach(function (day) {
+    var label = day.label.charAt(0).toUpperCase() + day.label.slice(1);
+    html += '<option value="' + day.date + '">' + escapeHtml(label) + '</option>';
+  });
+  html += '</select>';
+  html += '<p class="exercise-label">¿Cómo estuvo tu energía?</p>';
+  html += '<div class="level-buttons evolution-add-levels">';
+  ['alta', 'media', 'baja'].forEach(function (level) {
+    html += '<button type="button" class="level-btn" data-level="' + level + '" aria-pressed="false">' + levelLabelHtml(level) + '</button>';
+  });
+  html += '</div>';
+  html += '<button type="button" class="btn" id="evolution-add-save">Guardar día</button>';
+  html += '<p id="evolution-add-msg" class="confirmation" aria-live="polite" hidden></p>';
+  html += '</details>';
+  html += '<p id="evolution-add-confirm" class="confirmation" aria-live="polite" hidden>Día añadido.</p>';
+  return html;
+}
+
+function wireEvolutionAddDay() {
+  var saveBtn = document.getElementById('evolution-add-save');
+  if (!saveBtn) return;
+  var levels = document.querySelectorAll('.evolution-add-levels .level-btn');
+  var msg = document.getElementById('evolution-add-msg');
+  levels.forEach(function (b) {
+    b.addEventListener('click', function () {
+      levels.forEach(function (x) { x.classList.remove('selected'); x.setAttribute('aria-pressed', 'false'); });
+      b.classList.add('selected');
+      b.setAttribute('aria-pressed', 'true');
+      msg.hidden = true;
+    });
+  });
+  saveBtn.addEventListener('click', function () {
+    var selected = document.querySelector('.evolution-add-levels .level-btn.selected');
+    var date = document.getElementById('evolution-add-date').value;
+    if (!selected) {
+      msg.textContent = 'Toca un nivel para guardar ese día.';
+      msg.hidden = false;
+      return;
+    }
+    // Por si la app se quedó abierta y la fecha elegida ya no es pasada.
+    var ok = date < todayDateString() &&
+      saveEntry({ date: date, level: selected.getAttribute('data-level'), note: '', tags: [] });
+    if (!ok) {
+      msg.textContent = 'No se ha podido guardar. Inténtalo otra vez.';
+      msg.hidden = false;
+      return;
+    }
+    renderEvolution(null);
+    var confirm = document.getElementById('evolution-add-confirm');
+    if (confirm) { confirm.hidden = false; }
+  });
 }
 
 // editingDate (opcional): fecha ISO del registro cuyo formulario de edición
@@ -1633,13 +1976,15 @@ function renderEvolution(editingDate) {
     markResumenSeen();
   }
 
-  var html = '<p class="eyebrow">Últimos 14 días</p><h1>Evolución</h1>';
+  var html = '<p class="eyebrow">Últimos registros</p><h1>Evolución</h1>';
 
   if (allEntries.length < 2) {
     // Mismo mensaje que Inicio para 0 o 1 registros (step-16, E2): antes
     // decia algo distinto aqui ("Necesitas al menos 2 registros...").
     html += '<p>' + escapeHtml(apunta3DiasMensaje(allEntries.length)) + '</p>';
+    html += evolutionAddDayHtml(allEntries);
     document.getElementById('app-content').innerHTML = html;
+    wireEvolutionAddDay();
     return;
   }
 
@@ -1663,13 +2008,14 @@ function renderEvolution(editingDate) {
   }
 
   html += '<h2>Historial</h2>';
+  html += evolutionAddDayHtml(allEntries);
   html += '<ul class="log-list">';
   allEntries.forEach(function (entry) {
     var isEditing = editingDate === entry.date;
     html += '<li>';
     html += '<button type="button" class="evolution-entry-btn" data-date="' + escapeHtml(entry.date) +
       '" aria-expanded="' + (isEditing ? 'true' : 'false') + '">' +
-      '<span class="badge ' + levelBadgeClass(entry.level) + '">' + escapeHtml(levelLabel(entry.level)) + '</span> ' +
+      '<span class="badge ' + levelBadgeClass(entry.level) + '">' + levelLabelHtml(entry.level) + '</span> ' +
       '<span class="log-date">' + escapeHtml(formatShortDate(entry.date)) + '</span>' +
       '</button>';
     if (!isEditing && Array.isArray(entry.tags) && entry.tags.length) {
@@ -1688,7 +2034,7 @@ function renderEvolution(editingDate) {
       ['alta', 'media', 'baja'].forEach(function (level) {
         var isSelected = level === entry.level;
         html += '<button type="button" class="level-btn' + (isSelected ? ' selected' : '') +
-          '" data-level="' + level + '" aria-pressed="' + (isSelected ? 'true' : 'false') + '">' + levelLabel(level) + '</button>';
+          '" data-level="' + level + '" aria-pressed="' + (isSelected ? 'true' : 'false') + '">' + levelLabelHtml(level) + '</button>';
       });
       html += '</div>';
       html += '<p class="exercise-label">Etiquetas (opcional)</p>';
@@ -1712,6 +2058,8 @@ function renderEvolution(editingDate) {
   html += '</ul>';
 
   document.getElementById('app-content').innerHTML = html;
+
+  wireEvolutionAddDay();
 
   var canvas = document.getElementById('evolution-canvas');
   drawEvolutionChart(canvas, chartEntries);
@@ -1802,7 +2150,7 @@ function renderMyData() {
 
   html += '<div class="card">';
   html += '<h2>Borrar todos tus datos</h2>';
-  html += '<p>Esto elimina para siempre todos tus registros de energía guardados en este móvil. No se puede deshacer.</p>';
+  html += '<p>Esto elimina para siempre todos tus registros de energía guardados en este móvil. No se puede deshacer. Si tienes el aviso diario activado, también se desactiva.</p>';
   html += '<button type="button" id="delete-btn" class="btn btn-danger">Borrar todos mis datos</button>';
   html += '<div id="delete-confirm" class="callout" hidden>';
   html += '<p>¿Seguro que quieres borrar todos tus registros? Esta acción no se puede deshacer.</p>';
@@ -1867,9 +2215,11 @@ function renderMyData() {
         navigator.share({ files: [file], title: filename }).then(function () {
           exportConfirm.textContent = 'Archivo compartido: ' + filename + '.';
           exportConfirm.hidden = false;
-        }).catch(function () {
-          // Puede ser que el usuario cancelara el share, no necesariamente
-          // un fallo: se ofrece igualmente la alternativa de copiar.
+        }).catch(function (err) {
+          // Paso 21: si la persona cerró el menú de compartir (AbortError)
+          // no es un fallo -- no se muestra nada. Solo ante un error real
+          // se ofrece la alternativa de copiar el texto.
+          if (err && err.name === 'AbortError') { return; }
           showCopyFallback();
         });
         return;
@@ -1887,8 +2237,10 @@ function renderMyData() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      exportConfirm.textContent = 'Descargado: ' + filename + '.';
+      // Paso 21: se libera un poco después, no al instante -- Safari puede
+      // no haber empezado todavía la descarga y se quedaba sin archivo.
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      exportConfirm.textContent = 'Listo: ' + filename + '. Búscalo en tus descargas.';
       exportConfirm.hidden = false;
     } catch (e) {
       exportError.textContent = 'No se ha podido descargar el archivo. Inténtalo de nuevo.';
@@ -1911,15 +2263,30 @@ function renderMyData() {
     var file = fileInput.files[0];
     if (!file) return;
 
+    // Paso 23: un solo sitio para el mensaje de "este archivo no sirve",
+    // también si el archivo no se puede leer o es demasiado grande para
+    // ser una copia de esta app (una copia de años ocupa menos de 1 MB).
+    function showImportError(texto) {
+      var errorText = document.createElement('p');
+      errorText.textContent = texto;
+      importError.appendChild(errorText);
+      importError.hidden = false;
+      fileInput.value = '';
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      showImportError('Este archivo es demasiado grande para ser una copia de Mi Energía. No se ha importado nada. Tus datos siguen como estaban.');
+      return;
+    }
+
     var reader = new FileReader();
+    reader.onerror = function () {
+      showImportError('No se ha podido leer el archivo. No se ha importado nada. Tus datos siguen como estaban.');
+    };
     reader.onload = function () {
       var parsedData = parseBackupJSON(String(reader.result));
       if (!parsedData) {
-        var errorText = document.createElement('p');
-        errorText.textContent = 'Este archivo no tiene un formato válido de copia de seguridad de Mi Energía. No se ha importado nada.';
-        importError.appendChild(errorText);
-        importError.hidden = false;
-        fileInput.value = '';
+        showImportError('Este archivo no es una copia de seguridad de Mi Energía, o está dañado. No se ha importado nada. Tus datos siguen como estaban.');
         return;
       }
 
@@ -1975,13 +2342,51 @@ function renderMyData() {
   });
 
   document.getElementById('delete-confirm-btn').addEventListener('click', function () {
-    deleteAllData();
-    renderMyData();
-    var successEl = document.getElementById('delete-success');
-    if (successEl) {
-      successEl.hidden = false;
+    var confirmBtn = document.getElementById('delete-confirm-btn');
+    var avisoActivo = getRecordatorioPrefs().activo && AVISO_ONESIGNAL_CONECTADO;
+
+    function terminar(mensaje) {
+      renderMyData();
+      var successEl = document.getElementById('delete-success');
+      if (successEl) {
+        successEl.textContent = mensaje;
+        successEl.hidden = false;
+      }
     }
+
+    deleteAllData();
+    if (!avisoActivo) {
+      terminar('Tus datos se han borrado.');
+      return;
+    }
+    // Paso 21: si el aviso diario estaba activo, borrar los datos también
+    // lo da de baja en el servicio (antes seguía llegando el aviso). Solo
+    // se carga el SDK en este caso, es decir, para quien ya lo activó.
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Borrando…';
+    darDeBajaAvisoRemoto().then(function () {
+      saveRecordatorioPrefs([], false);
+      terminar('Tus datos se han borrado y el aviso diario está desactivado.');
+    }, function () {
+      // Sin conexión no se puede dar de baja: el aviso se deja como activo
+      // aquí para poder desactivarlo luego desde Recordatorios.
+      terminar('Tus datos se han borrado. El aviso diario no se pudo desactivar ahora: hazlo en Recordatorios cuando tengas conexión.');
+    });
   });
+}
+
+// Paso 21: baja completa del aviso diario en el servicio (quita las
+// etiquetas de franja y da de baja la suscripción), con tiempo máximo.
+// La usa "Borrar todos mis datos". Las etiquetas son las mismas que
+// gestiona wireAvisoDiario(); aquí solo se quitan.
+function darDeBajaAvisoRemoto() {
+  return conTiempoLimite(inicializarOneSignal().then(function (OneSignal) {
+    RECORDATORIO_FRANJAS.forEach(function (f) {
+      OneSignal.User.removeTag('aviso_' + f);
+    });
+    OneSignal.User.removeTag('franja');
+    return OneSignal.User.PushSubscription.optOut();
+  }), 12000);
 }
 
 // Paso 18: desplegable cerrado por defecto con las 5 capturas de un
@@ -2080,47 +2485,6 @@ function renderInstall() {
   }
 }
 
-// Genera el texto de un archivo .ics con dos eventos diarios recurrentes
-// (mañana y noche), con una alarma de aviso y un enlace de vuelta a la app
-// en la descripción. Es un archivo local, generado en el propio navegador:
-// no se envía a ningún sitio. Experimental (step-15): la fiabilidad de
-// descargar y abrir un .ics varía mucho según teléfono y navegador.
-function buildRecordatoriosICS(morning, night) {
-  var today = todayDateString().replace(/-/g, '');
-  var stamp = today + 'T000000Z';
-  var appUrl = location.href.split('#')[0];
-
-  function vevent(uid, time, summary) {
-    var hhmm = time.replace(':', '') + '00';
-    return [
-      'BEGIN:VEVENT',
-      'UID:' + uid,
-      'DTSTAMP:' + stamp,
-      'DTSTART:' + today + 'T' + hhmm,
-      'RRULE:FREQ=DAILY',
-      'SUMMARY:' + summary,
-      'DESCRIPTION:' + appUrl,
-      'BEGIN:VALARM',
-      'ACTION:DISPLAY',
-      'DESCRIPTION:' + summary,
-      'TRIGGER:PT0M',
-      'END:VALARM',
-      'END:VEVENT'
-    ].join('\r\n');
-  }
-
-  return [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Mi Energia//Recordatorios//ES',
-    'CALSCALE:GREGORIAN',
-    vevent('mi-energia-manana-' + today + '@local', morning, 'Registrar mi energía y elegir mi día'),
-    vevent('mi-energia-noche-' + today + '@local', night, 'Cerrar el día'),
-    'END:VCALENDAR',
-    ''
-  ].join('\r\n');
-}
-
 // Paso 17c: ya existe la conexión real con OneSignal, con el App ID real
 // de la app "Mi Energía" (Web Push) que Ana creó en su dashboard. Sigue
 // siendo 100% opt-in -- nada de esto corre hasta que la persona pulsa
@@ -2164,9 +2528,20 @@ function cargarOneSignalSDK() {
 // resuelve con el objeto OneSignal ya listo para pedir permiso / etiquetar
 // / darse de baja. El service worker dedicado (ver arriba) solo se
 // registra en este momento, no antes.
+// Paso 21: OneSignal.init() solo se puede llamar UNA vez por sesión. Antes
+// se llamaba en cada acción (activar, cambiar franja, desactivar), y la
+// segunda llamada podía no resolverse nunca: por ejemplo, cambiar una
+// franja y luego pulsar "Desactivar aviso" dejaba el botón bloqueado. Ahora
+// se guarda la promesa de la primera inicialización y se reutiliza. Si
+// falla (sin conexión), se olvida para poder reintentar.
+var oneSignalListoPromesa = null;
+
 function inicializarOneSignal() {
-  return cargarOneSignalSDK().then(function () {
-    return new Promise(function (resolve) {
+  if (oneSignalListoPromesa) {
+    return oneSignalListoPromesa;
+  }
+  oneSignalListoPromesa = cargarOneSignalSDK().then(function () {
+    return new Promise(function (resolve, reject) {
       window.OneSignalDeferred.push(function (OneSignal) {
         OneSignal.init({
           appId: ONESIGNAL_APP_ID,
@@ -2174,10 +2549,14 @@ function inicializarOneSignal() {
           serviceWorkerParam: { scope: ONESIGNAL_SW_SCOPE }
         }).then(function () {
           resolve(OneSignal);
-        });
+        }, reject);
       });
     });
   });
+  oneSignalListoPromesa.catch(function () {
+    oneSignalListoPromesa = null;
+  });
+  return oneSignalListoPromesa;
 }
 
 // Paso 17f: pone un tiempo máximo a una promesa de red (carga del SDK,
@@ -2216,23 +2595,33 @@ function avisoDiarioHtml(prefs) {
   // Paso 17h: la etiqueta principal es solo "Mañana"/"Tarde"/"Noche" --
   // la hora exacta va debajo, en texto más suave, para no competir con
   // los relojes de la alarma manual de más abajo. Los valores reales de
-  // franja (f.id) y las horas de envío no cambian, solo cómo se muestran.
-  // Paso 17k: de radio (una sola franja) a casilla (varias a la vez).
+  // franja (f.id) no cambian, solo cómo se muestran. Paso 17k: de radio
+  // (una sola franja) a casilla (varias a la vez). Paso 19: la hora de
+  // cada franja es fija (RECORDATORIO_FRANJAS_HORAS) -- ya no es un
+  // rango ("a partir de las...") sino la hora exacta a la que llega el
+  // aviso, igual para todo el mundo en su propia zona horaria.
   var franjas = [
-    { id: 'manana', principal: 'Mañana', hora: 'a partir de las 9:00' },
-    { id: 'tarde', principal: 'Tarde', hora: 'a partir de las 18:00' },
-    { id: 'noche', principal: 'Noche', hora: 'a partir de las 21:00' }
+    { id: 'manana', principal: 'Mañana', hora: RECORDATORIO_FRANJAS_HORAS.manana },
+    { id: 'tarde', principal: 'Tarde', hora: RECORDATORIO_FRANJAS_HORAS.tarde },
+    { id: 'noche', principal: 'Noche', hora: RECORDATORIO_FRANJAS_HORAS.noche }
   ];
 
   var html = '<h2>Aviso diario (opcional)</h2>';
-  html += '<p>Si quieres, la app puede avisarte una vez al día para que no se te olvide registrar tu energía. ' +
-    'Es opcional y puedes desactivarlo cuando quieras.</p>';
+  html += '<p>Un aviso para que no se te olvide registrar tu energía. Puedes desactivarlo cuando quieras.</p>';
 
-  html += '<div class="callout"><p><strong>Qué sale de tu móvil si lo activas:</strong> solo lo mínimo que ' +
+  // Paso 23: pantalla más corta. Lo esencial se queda a la vista en una
+  // frase; el detalle completo (el mismo texto de antes, sin cambios) va
+  // en un desplegable justo debajo.
+  html += '<p><strong>Si lo activas, de tu móvil solo sale lo mínimo para enviarte el aviso. Nunca tus ' +
+    'registros ni tus notas.</strong></p>';
+  html += '<details class="inline-details">';
+  html += '<summary>Ver qué sale exactamente</summary>';
+  html += '<p><strong>Qué sale de tu móvil si lo activas:</strong> solo lo mínimo que ' +
     'necesita el servicio que envía el aviso (sistema operativo, idioma, zona horaria, país aproximado, modelo ' +
     'de tu dispositivo y las franjas que elijas abajo). <strong>Nunca se envían tus registros de energía, tus ' +
     'notas ni nada de lo que guardas en esta app.</strong> Puedes leer el detalle completo en ' +
-    '<a href="#/privacidad">Privacidad</a>.</p></div>';
+    '<a href="#/privacidad">Privacidad</a>.</p>';
+  html += '</details>';
 
   html += '<fieldset class="aviso-franjas-fieldset">';
   html += '<legend class="exercise-label">¿Cuándo quieres tu aviso diario? Puedes elegir más de uno.</legend>';
@@ -2249,6 +2638,9 @@ function avisoDiarioHtml(prefs) {
   });
   html += '</ul>';
   html += '</fieldset>';
+  // Paso 19: aclara que la hora de cada franja es fija (no se elige),
+  // y que llega según la zona horaria del propio móvil.
+  html += '<p class="eyebrow">Recibirás el aviso a esa hora, en tu zona horaria.</p>';
 
   // Paso 17f: mensaje breve y tranquilo para confirmar que, al cambiar de
   // franjas con el aviso ya activado, se actualizó también en el servicio
@@ -2259,7 +2651,7 @@ function avisoDiarioHtml(prefs) {
   html += '<p class="eyebrow" id="aviso-franja-confirmacion" aria-live="polite"></p>';
 
   if (prefs.activo) {
-    html += '<p class="aviso-estado">Aviso activado · ' + escapeHtml(franjasListLabel(prefs.franjas)) + '.</p>';
+    html += '<p class="aviso-estado">Aviso activado · ' + escapeHtml(franjasConHoraLabel(prefs.franjas)) + '.</p>';
     html += '<button type="button" class="btn btn-secondary" id="aviso-desactivar-btn">Desactivar aviso</button>';
   } else {
     html += '<button type="button" class="btn" id="aviso-activar-btn">Activar aviso</button>';
@@ -2287,8 +2679,6 @@ function actualizarAvisoZona(mensaje) {
   var prefs = getRecordatorioPrefs();
   zona.innerHTML = avisoDiarioHtml(prefs);
   wireAvisoDiario();
-  var alarmaAlt = document.getElementById('recordatorio-alarma-alt');
-  if (alarmaAlt) { alarmaAlt.open = !prefs.activo; }
   // Paso 17k: un mensaje sereno opcional que sobrevive al repintado de
   // arriba (por ejemplo, al desactivarse solo el aviso porque se
   // desmarcaron todas las franjas).
@@ -2474,10 +2864,12 @@ function wireAvisoDiario() {
         return;
       }
       desactivarBtn.disabled = true;
-      inicializarOneSignal().then(function (OneSignal) {
+      // Paso 21: con tiempo máximo, igual que al activar -- así el botón
+      // nunca se queda bloqueado si el servicio no responde.
+      conTiempoLimite(inicializarOneSignal().then(function (OneSignal) {
         sincronizarEtiquetasFranjas(OneSignal, []);
         return OneSignal.User.PushSubscription.optOut();
-      }).catch(function () {
+      }), 12000).catch(function () {
         // Si optOut() falla (por ejemplo sin conexión), seguimos
         // guardando la preferencia local como desactivada: lo importante
         // es que la persona deje de ver el aviso como "activo" en esta
@@ -2535,11 +2927,10 @@ function horaSelectsHtml(idPrefix, hora, ariaHoraLabel, ariaMinutoLabel) {
 // mezclarlas sin que la persona lo pida claramente. Paso 17h: los
 // selectores de hora y su explicación viven siempre dentro del
 // desplegable "alternativa", para no mostrar dos juegos de horas a la
-// vez junto a las opciones del aviso de arriba. El botón de .ics solo se
-// muestra donde puede funcionar (Android y Safari normal); dentro de la
-// app instalada en iPhone (standalone) se omite, porque WebKit bloquea
-// esa descarga en modo standalone.
-function recordatoriosHtml(morning, night, showIcsSection, isIOS, isStandalone, prefs) {
+// vez junto a las opciones del aviso de arriba. Paso 23: se quitó el
+// archivo de calendario (.ics), que era experimental, y el desplegable de
+// la alarma queda siempre plegado para acortar la pantalla.
+function recordatoriosHtml(morning, night, isIOS, prefs) {
   var html = '<h1>Recordatorios</h1>';
 
   // Paso 17g: esta zona se repinta sola (ver actualizarAvisoZona()) al
@@ -2550,8 +2941,7 @@ function recordatoriosHtml(morning, night, showIcsSection, isIOS, isStandalone, 
   // Paso 17h: el cuadro, los selectores y los pasos de la alarma manual
   // van todos dentro de este desplegable -- no se repiten las horas del
   // aviso, que ya se ven arriba junto a cada franja.
-  var alarmaManualHtml = '<div class="callout"><p>Estos relojes solo rellenan los pasos de abajo para que no ' +
-    'escribas la hora a mano. La alarma de verdad se crea en la app Reloj de tu móvil.</p></div>';
+  var alarmaManualHtml = '<p>Elige tus horas y sigue los pasos. La alarma se crea en la app Reloj de tu móvil.</p>';
 
   alarmaManualHtml += '<div class="recordatorio-field">';
   alarmaManualHtml += '<p class="exercise-label">Por la mañana: registrar mi energía y elegir mi día</p>';
@@ -2561,8 +2951,6 @@ function recordatoriosHtml(morning, night, showIcsSection, isIOS, isStandalone, 
   alarmaManualHtml += '<p class="exercise-label">Por la noche: cerrar el día</p>';
   alarmaManualHtml += horaSelectsHtml('recordatorio-noche-hora', night, 'Hora de la alarma de la noche', 'Minutos de la alarma de la noche');
   alarmaManualHtml += '</div>';
-
-  alarmaManualHtml += '<p>Esta es la forma que funciona siempre, en cualquier teléfono: una alarma diaria normal, con un nombre que te recuerde qué tocaba.</p>';
 
   alarmaManualHtml += '<details class="platform-details"' + (isIOS ? ' open' : '') + '>';
   alarmaManualHtml += '<summary>En iPhone (con la app Reloj)</summary>';
@@ -2593,20 +2981,12 @@ function recordatoriosHtml(morning, night, showIcsSection, isIOS, isStandalone, 
   // Paso 17e/17h: con el aviso ya activado, la alarma manual es una
   // alternativa secundaria -- se pliega para no repetir dos juegos de
   // horas a la vez. Sin aviso activado, se abre por defecto como antes.
-  html += '<details class="platform-details" id="recordatorio-alarma-alt"' + (prefs.activo ? '' : ' open') + '>';
-  html += '<summary>Prefiero una alarma en mi Reloj (alternativa)</summary>';
+  // Paso 23: siempre plegado (antes se abría solo si el aviso no estaba
+  // activo, y la pantalla ocupaba casi cinco pantallas de alto).
+  html += '<details class="platform-details" id="recordatorio-alarma-alt">';
+  html += '<summary>Prefiero una alarma en mi Reloj</summary>';
   html += alarmaManualHtml;
   html += '</details>';
-
-  if (showIcsSection) {
-    html += '<h2>Alternativa: archivo para el calendario (experimental)</h2>';
-    html += '<p>En Android y en Safari (sin tener la app instalada) puedes probar a descargar un archivo que añade ' +
-      'estos dos avisos a tu calendario. Es experimental: en algunos teléfonos puede que no funcione. Si no ' +
-      'funciona, usa los pasos de la alarma de arriba.</p>';
-    html += '<button type="button" class="btn btn-outline" id="recordatorio-ics-btn">Descargar recordatorio (.ics)</button>';
-  } else if (isIOS && isStandalone) {
-    html += '<p class="eyebrow">Dentro de la app instalada en iPhone no se puede descargar el archivo del calendario: usa los pasos de la alarma de arriba.</p>';
-  }
 
   html += '<p class="signature">@compartir.para.sanar</p>';
   return html;
@@ -2616,8 +2996,7 @@ function recordatoriosHtml(morning, night, showIcsSection, isIOS, isStandalone, 
 // minutos -- en vez de un input type="time"). Actualizan al instante el
 // texto de las instrucciones, guardan la elección (paso 17g, ver
 // saveAlarmaManualHoras() en storage.js) para que no se pierda al
-// repintar la pantalla, y el botón de .ics los usa para generar el
-// archivo en el momento.
+// repintar la pantalla.
 function wireRecordatorios() {
   var mananaH = document.getElementById('recordatorio-manana-hora-h');
   var mananaM = document.getElementById('recordatorio-manana-hora-m');
@@ -2647,33 +3026,13 @@ function wireRecordatorios() {
       saveAlarmaManualHoras(morningValue(), nightValue());
     });
   });
-
-  var icsBtn = document.getElementById('recordatorio-ics-btn');
-  if (icsBtn) {
-    icsBtn.addEventListener('click', function () {
-      var morning = morningValue();
-      var night = nightValue();
-      var ics = buildRecordatoriosICS(morning, night);
-      var blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = 'recordatorios-mi-energia.ics';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-    });
-  }
 }
 
 function renderRecordatorios() {
   var isIOS = isIOSDevice();
-  var standalone = isStandaloneDisplay();
-  var showIcsSection = !(isIOS && standalone);
   var prefs = getRecordatorioPrefs();
   var horas = getAlarmaManualHoras();
-  var html = recordatoriosHtml(horas.morning, horas.night, showIcsSection, isIOS, standalone, prefs);
+  var html = recordatoriosHtml(horas.morning, horas.night, isIOS, prefs);
   document.getElementById('app-content').innerHTML = html;
   wireRecordatorios();
   wireAvisoDiario();

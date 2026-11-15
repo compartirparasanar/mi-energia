@@ -73,16 +73,69 @@ function router() {
   // Resalta la pestana activa del menu inferior fijo; vive en views.js
   // porque es manipulacion de DOM, pero no decide que vista renderizar.
   setActiveNavTab(hash);
+
+  // Paso 20: titulo de la pestaña segun la pantalla, y fecha en la que se
+  // pinto (para detectar el cambio de dia, ver mas abajo). Ambas cosas
+  // viven en views.js; aqui solo se invocan.
+  updateDocumentTitle(hash);
+  markRenderDate();
 }
 
-window.addEventListener('hashchange', router);
-window.addEventListener('DOMContentLoaded', router);
+// Paso 20: al cambiar de pantalla, la nueva empieza arriba y el foco pasa
+// al contenido (antes "Siguiente" abria el capitulo ya bajado hasta el
+// final, y un lector de pantalla no se enteraba del cambio). Solo en
+// navegacion real, no en la primera carga.
+window.addEventListener('hashchange', function () {
+  router();
+  focusContentAfterNavigation();
+});
+window.addEventListener('DOMContentLoaded', function () {
+  router();
+  wireSkipLink();
+});
+
+// Paso 20: en el movil la app instalada se "despierta" sin recargar. Si
+// mientras tanto cambio el dia, se repinta la pantalla actual para que
+// "hoy" sea de verdad hoy (antes Inicio seguia mostrando el nivel de ayer
+// como si fuera el de hoy, y Mi dia guardaba en la fecha de ayer).
+function repaintIfDayChanged() {
+  if (document.visibilityState === 'visible' && hasDayChangedSinceRender()) {
+    router();
+  }
+}
+document.addEventListener('visibilitychange', repaintIfDayChanged);
+window.addEventListener('pageshow', repaintIfDayChanged);
+window.addEventListener('focus', repaintIfDayChanged);
 
 if ('serviceWorker' in navigator) {
+  // Paso 21: si al cargar ya habia un service worker al mando y luego
+  // cambia, es que ha llegado una version nueva (en la primera instalacion
+  // no habia ninguno, y ahi no se avisa). Los archivos nuevos solo se usan
+  // al recargar, asi que se ofrece un aviso discreto -- nunca se recarga
+  // sola, para no perder una nota a medio escribir.
+  var hadControllerAtLoad = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (hadControllerAtLoad) {
+      showUpdateBanner();
+    }
+  });
+
   window.addEventListener('load', function () {
     navigator.serviceWorker.register('./service-worker.js').catch(function () {
       // Sin service worker la app sigue funcionando online con normalidad;
       // solo se pierde el cacheo para uso sin conexion.
+    });
+  });
+
+  // Paso 21: la app instalada en el movil casi nunca se recarga, asi que
+  // no llegaba a enterarse de que habia version nueva. Ahora lo comprueba
+  // cada vez que vuelve a primer plano.
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible') { return; }
+    navigator.serviceWorker.getRegistration().then(function (registration) {
+      if (registration) { return registration.update(); }
+    }).catch(function () {
+      // Sin conexion no hay nada que comprobar; se reintenta la proxima vez.
     });
   });
 }

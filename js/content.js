@@ -346,7 +346,7 @@ var GUIDE_CONTENT = {
     "intro2": "Toca 3 pasos.",
     "opciones": [
       "Preparar la ropa la noche anterior",
-      "Café tranquilo, sentado/a, 5 min antes del móvil",
+      "Café tranquilo, 5 min sin prisa antes del móvil",
       "Una sola tarea de casa",
       "Apagar pantallas 20 min antes",
       "Cerrar con \"hoy hice suficiente\""

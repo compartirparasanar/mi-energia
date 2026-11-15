@@ -17,7 +17,7 @@
 // Resultado: quien ya tiene la app instalada recibe la actualizacion la
 // siguiente vez que la abre con conexion a internet (normalmente en la
 // recarga siguiente, a veces una recarga mas tarde segun el navegador).
-var CACHE_VERSION = 'v30';
+var CACHE_VERSION = 'v35';
 var CACHE_NAME = 'mi-energia-' + CACHE_VERSION;
 
 var PRECACHE_URLS = [
@@ -45,7 +45,13 @@ var PRECACHE_URLS = [
 self.addEventListener('install', function (event) {
   event.waitUntil(
     caches.open(CACHE_NAME).then(function (cache) {
-      return cache.addAll(PRECACHE_URLS);
+      // Paso 21: cache 'reload' obliga a pedir cada archivo al servidor,
+      // sin pasar por la cache HTTP del navegador. Sin esto, una version
+      // nueva podia guardarse con archivos viejos (GitHub Pages deja que el
+      // navegador los reutilice durante 10 minutos).
+      return cache.addAll(PRECACHE_URLS.map(function (url) {
+        return new Request(url, { cache: 'reload' });
+      }));
     }).then(function () {
       return self.skipWaiting();
     })

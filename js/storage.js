@@ -46,6 +46,11 @@ var ULTIMO_CAPITULO_KEY = 'mi-energia-ultimo-capitulo';
 // guarda una hora exacta, solo franjas, y unicamente para esta funcion
 // opcional de aviso push. No es un dato de energia: no se incluye en la
 // exportacion/importacion de la copia de seguridad (ver CLAUDE.md, paso 17).
+// Paso 19: cada franja se envia a una hora fija (9:00/18:00/21:00 segun
+// la zona horaria de quien la recibe), igual para todo el mundo -- la
+// persona ya no elige una hora para el aviso push, solo la franja. Esas
+// horas fijas son texto informativo en js/views.js (avisoDiarioHtml()),
+// no se guardan aqui.
 var RECORDATORIO_PREFS_KEY = 'mi-energia-recordatorio';
 var RECORDATORIO_FRANJAS = ['manana', 'tarde', 'noche'];
 // Horas de la alarma manual de "Pon una alarma en tu móvil" (paso 17g).
@@ -76,7 +81,21 @@ function todayDateString() {
   return year + '-' + month + '-' + day;
 }
 
-function getEnergyLog() {
+// Paso 23: comprueba que "YYYY-MM-DD" es una fecha que existe de verdad
+// (2026-02-31 o 2026-13-45 tienen el formato correcto pero no existen).
+function isRealDateString(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+  var parts = value.split('-').map(Number);
+  var d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+  return d.getUTCFullYear() === parts[0] && d.getUTCMonth() === parts[1] - 1 && d.getUTCDate() === parts[2];
+}
+
+// Paso 23: lee los registros guardados quedandose solo con los validos.
+// Antes, un dato corrupto (algo que no fuera una lista, o un registro sin
+// fecha) hacia fallar Inicio entero. El formato guardado no cambia.
+function readStoredEntries() {
   var raw = localStorage.getItem(ENERGY_LOG_KEY);
   var entries = [];
   try {
@@ -84,28 +103,66 @@ function getEnergyLog() {
   } catch (e) {
     entries = [];
   }
-  return entries.slice().sort(function (a, b) {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+  return entries.filter(isValidLogEntry);
+}
+
+function getEnergyLog() {
+  return readStoredEntries().sort(function (a, b) {
     return b.date.localeCompare(a.date);
   });
 }
 
+// Guarda (o sustituye) el registro de un dia. Paso 23: valida antes de
+// guardar -- nivel alta|media|baja y una fecha real YYYY-MM-DD -- y
+// devuelve true si se guardo, false si no (dato invalido, o el navegador
+// no dejo escribir). La nota y las etiquetas se sanean, nunca bloquean.
 function saveEntry(entry) {
-  var raw = localStorage.getItem(ENERGY_LOG_KEY);
-  var entries = [];
-  try {
-    entries = raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    entries = [];
+  if (!isValidLogEntry(entry)) {
+    return false;
   }
+  var clean = {
+    date: entry.date,
+    level: entry.level,
+    note: typeof entry.note === 'string' ? entry.note : '',
+    tags: isValidTagsArray(entry.tags) ? entry.tags : []
+  };
+  var entries = readStoredEntries();
   var index = entries.findIndex(function (e) {
-    return e.date === entry.date;
+    return e.date === clean.date;
   });
   if (index >= 0) {
-    entries[index] = entry;
+    entries[index] = clean;
   } else {
-    entries.push(entry);
+    entries.push(clean);
   }
-  localStorage.setItem(ENERGY_LOG_KEY, JSON.stringify(entries));
+  try {
+    localStorage.setItem(ENERGY_LOG_KEY, JSON.stringify(entries));
+  } catch (e) {
+    return false;
+  }
+  requestPersistentStorage();
+  return true;
+}
+
+// Paso 21: tras guardar un registro, pide al navegador que no borre los
+// datos de esta app por su cuenta cuando le falte espacio. No envia nada a
+// ningun sitio ni cambia como se guardan los datos; si el navegador no lo
+// ofrece o dice que no, todo sigue igual que antes. Una vez por sesion.
+var persistentStorageRequested = false;
+
+function requestPersistentStorage() {
+  if (persistentStorageRequested) { return; }
+  persistentStorageRequested = true;
+  try {
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist().catch(function () {});
+    }
+  } catch (e) {
+    // Navegador sin esta funcion: no pasa nada.
+  }
 }
 
 function getTodayEntry() {
@@ -188,6 +245,18 @@ function addMiCosa(group, label) {
   var all = getMisCosas();
   if (all[group].indexOf(label) === -1) {
     all[group].push(label);
+    localStorage.setItem(MIS_COSAS_KEY, JSON.stringify(all));
+  }
+}
+
+// Paso 23: quita una cosa propia de un grupo (por ejemplo, una errata).
+// Solo afecta a lo añadido a mano; la lista fija de content.js no se toca.
+function removeMiCosa(group, label) {
+  if (MIS_COSAS_GROUPS.indexOf(group) === -1) return;
+  var all = getMisCosas();
+  var idx = all[group].indexOf(label);
+  if (idx !== -1) {
+    all[group].splice(idx, 1);
     localStorage.setItem(MIS_COSAS_KEY, JSON.stringify(all));
   }
 }
@@ -551,8 +620,8 @@ function exportDataJSON() {
 }
 
 function isValidLogEntry(entry) {
-  return entry !== null && typeof entry === 'object' &&
-    /^\d{4}-\d{2}-\d{2}$/.test(entry.date) &&
+  return entry !== null && typeof entry === 'object' && !Array.isArray(entry) &&
+    isRealDateString(entry.date) &&
     ['alta', 'media', 'baja'].indexOf(entry.level) !== -1;
 }
 
@@ -569,17 +638,28 @@ function parseBackupJSON(jsonText) {
   } catch (e) {
     return null;
   }
+  // Paso 23: un archivo cuyo contenido es null, un numero o un texto ya no
+  // hace fallar la importacion en silencio -- simplemente no es valido.
+  if (parsed === null || typeof parsed !== 'object') {
+    return null;
+  }
   var entries = Array.isArray(parsed) ? parsed : parsed.entries;
   if (!Array.isArray(entries) || !entries.every(isValidLogEntry)) {
     return null;
   }
-  var sanitizedEntries = entries.map(function (e) {
-    return {
+  // Solo se copian los campos conocidos (nada mas de lo que traiga el
+  // archivo) y, si una fecha viene repetida, se queda la ultima.
+  var byDate = {};
+  entries.forEach(function (e) {
+    byDate[e.date] = {
       date: e.date,
       level: e.level,
       note: typeof e.note === 'string' ? e.note : '',
       tags: isValidTagsArray(e.tags) ? e.tags : []
     };
+  });
+  var sanitizedEntries = Object.keys(byDate).map(function (date) {
+    return byDate[date];
   });
   var rawExercises = (!Array.isArray(parsed) && parsed && parsed.exercises) || {};
   var exercises = isValidExercisesBlock(rawExercises) ? rawExercises : {};
