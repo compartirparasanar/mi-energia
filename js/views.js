@@ -38,7 +38,7 @@ function isIOSDevice() {
 // Paso 25: version visible en Mis datos, para saber cual tiene cada
 // persona cuando cuenta un problema. OJO: hay que subirla A LA VEZ que
 // CACHE_VERSION en service-worker.js (son el mismo numero).
-var APP_VERSION = '37';
+var APP_VERSION = '38';
 
 // Paso 25: los dos unicos enlaces que salen de la app (se abren fuera, en
 // el navegador; no cargan nada dentro de la app). El formulario de opinion
@@ -631,10 +631,10 @@ function renderHome() {
 
   html += '<p class="home-footer">Recibes esta app por tu suscripción a @compartir.para.sanar.' +
     (isInstalled ? '' : ' <a href="#/instalar">Cómo instalar</a>') + '</p>';
-  // Paso 25: al final de Inicio, texto sencillo y discreto -- quién hay
-  // detrás y la guía completa (esta se abre fuera de la app).
-  html += '<p class="home-footer home-footer-links"><a href="#/quien">Quién hay detrás</a> ' +
-    externalLinkHtml(GUIDE_URL, 'Menos Fatiga, Más Vida: la guía completa') + '</p>';
+  // Paso 25/27: al final de Inicio, texto sencillo y discreto -- solo
+  // "Quién hay detrás". El enlace a la guía se quitó de aquí en el paso
+  // 27; sigue en la pantalla "Quién hay detrás".
+  html += '<p class="home-footer home-footer-links"><a href="#/quien">Quién hay detrás</a></p>';
 
   document.getElementById('app-content').innerHTML = html;
   wireIosInstallNotice();
